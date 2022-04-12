@@ -42,15 +42,15 @@ void scene_structure::initialize() {
 	environment.camera.look_at({ 2.0f,-2.0f,1.0f }, { 0,0,0 });
 
 	// Number of clusters
-	N = 1000;
+	N = 500;
 
 	jcv_diagram diagram;
     memset(&diagram, 0, sizeof(jcv_diagram));
 	jcv_point* points = (jcv_point*) malloc(N*sizeof(jcv_point));
 	for (int i = 0; i < N; i++) {
 		jcv_point pt;
-		pt.x = rand() % 300;
-		pt.y = rand() % 300;
+		pt.x = rand() % 100;
+		pt.y = rand() % 100;
 		points[i] = pt;
 	}
 
@@ -66,6 +66,8 @@ void scene_structure::initialize() {
 	// Store the centers
     for (int i = 0; i < N; i++) {
 		centers.push_back({points[i].x, points[i].y, 0});
+		if (i % 2 == 0) biotopes.push_back(Biotope::Land);
+		else biotopes.push_back(Biotope::Ocean);
 	}
 
 	// Store the edges
@@ -103,12 +105,17 @@ void scene_structure::display() {
 	// Update the current time
 	timer.update();
 
-	for(std::tuple<vec3, vec3>& edge: edges)
+	for (std::tuple<vec3, vec3>& edge: edges)
 		draw_segment(std::get<0>(edge), std::get<1>(edge));
 
-	for (vec3& center : centers) {
+	for (int i = 0; i < N; i++) {
+		vec3& center = centers[i];
+		Biotope& biotope = biotopes[i];
 		//std::cout << "New center(" << center.x << "; " << center.y << "; " << center.z << ")" << std::endl;
 		particle_sphere.transform.translation = center;
+		if (biotope == Biotope::Land) particle_sphere.shading.color = {0,1,0};
+		else if (biotope == Biotope::Ocean) particle_sphere.shading.color = {0,0,1};
+		else particle_sphere.shading.color = {0,0,0};
 		draw(particle_sphere, environment);
 	}
 

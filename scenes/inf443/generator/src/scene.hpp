@@ -10,6 +10,11 @@ struct gui_parameters {
 };
 
 
+enum class Biotope {
+	Land,
+	Ocean
+};
+
 /// The structure of the custom scene.
 struct scene_structure {
 	// ****************************** //
@@ -37,6 +42,7 @@ struct scene_structure {
 	int N; // The number of clusters
 	std::vector<cgp::vec3> centers; // Their centers
     std::vector<std::tuple<cgp::vec3,cgp::vec3>> edges; // The edges
+    std::vector<Biotope> biotopes; // The biotope of the cluster
 
 	/// Timer used for the animation.
 	cgp::timer_basic timer;
