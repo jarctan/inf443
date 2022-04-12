@@ -26,6 +26,17 @@ struct scene_structure {
 	/// Standard GUI element storage.
 	gui_parameters gui;
 
+	void draw_segment(cgp::vec3 const& a, cgp::vec3 const& b);
+
+	// Drawable structures to display the Voronoi diagram
+	cgp::mesh_drawable particle_sphere;
+	cgp::segments_drawable segment;
+
+	// Structures representing the Voronoi diagram in memory
+	// TODO: improve it
+	int N; // The number of clusters
+	std::vector<cgp::vec3> centers; // Their centers
+    std::vector<std::tuple<cgp::vec3,cgp::vec3>> edges; // The edges
 
 	/// Timer used for the animation.
 	cgp::timer_basic timer;
