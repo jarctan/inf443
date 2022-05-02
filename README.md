@@ -13,6 +13,8 @@ Each scene is an independant program with its own Makefile and/or CMakeLists.txt
 
 The scenes should be run from their root path where _shaders/_ (and possibly _assets/_) directories are accessible.
 
+Tl;dr: Go to `scenes/inf443/generator` and then `make &&& ./pgm`. Should work at least on Linux.
+
 ### Dependencies
 
 CGP requires

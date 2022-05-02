@@ -1,6 +1,8 @@
 #include "scene.hpp"
 #define JC_VORONOI_IMPLEMENTATION
 #include "jc_voronoi.h"
+#define JC_VORONOI_CLIP_IMPLEMENTATION
+#include "jc_voronoi_clip.h"
 
 using namespace cgp;
 
@@ -11,8 +13,8 @@ void relax_points(const jcv_diagram* diagram, jcv_point* points) {
     for( int i = 0; i < diagram->numsites; ++i )
     {
         const jcv_site* site = &sites[i];
-        jcv_point sum = site->p;
-        int count = 1;
+        jcv_point sum = {0, 0};
+        int count = 0;
 
         const jcv_graphedge* edge = site->edges;
 
@@ -42,21 +44,45 @@ void scene_structure::initialize() {
 	environment.camera.look_at({ 2.0f,-2.0f,1.0f }, { 0,0,0 });
 
 	// Number of clusters
-	N = 500;
+	N = 100;
+	centers.resize(N);
+	biotopes.resize(N, Biotope::Land);
+	neighbors.resize(N);
 
 	jcv_diagram diagram;
     memset(&diagram, 0, sizeof(jcv_diagram));
 	jcv_point* points = (jcv_point*) malloc(N*sizeof(jcv_point));
+
 	for (int i = 0; i < N; i++) {
 		jcv_point pt;
-		pt.x = rand() % 100;
-		pt.y = rand() % 100;
+		pt.x = ((float) rand()) * 10.0f / RAND_MAX;
+		pt.y = (float) rand() * 10.0f / RAND_MAX;
 		points[i] = pt;
 	}
 
+    // Create a clipper, which is a rectangle
+	jcv_clipping_polygon polygon;
+    polygon.num_points = 4;
+    polygon.points = (jcv_point*)malloc(sizeof(jcv_point)*(size_t)polygon.num_points);
+
+    polygon.points[0].x = 0;
+    polygon.points[0].y = 0;
+    polygon.points[1].x = 10;
+    polygon.points[1].y = 0;
+    polygon.points[2].x = 10;
+    polygon.points[2].y = 10;
+    polygon.points[3].x = 0;
+    polygon.points[3].y = 10;
+
+    jcv_clipper polygonclipper;
+    polygonclipper.test_fn = jcv_clip_polygon_test_point;
+    polygonclipper.clip_fn = jcv_clip_polygon_clip_edge;
+    polygonclipper.fill_fn = jcv_clip_polygon_fill_gaps;
+    polygonclipper.ctx = &polygon;
+
 	// Run n iterations of Voronoi (find Voronoi clusters, then place points at centroids, repeat)
-	for (int i = 0; i < 2; i++) {
-		jcv_diagram_generate(N, points, 0, 0, &diagram );
+	for (int i = 0; i < 1; i++) {
+		jcv_diagram_generate(N, points, 0, &polygonclipper, &diagram );
 		relax_points(&diagram, points);
 	}
 
@@ -64,27 +90,43 @@ void scene_structure::initialize() {
 	segment.initialize({ {0,0,0},{1,0,0} });
 
 	// Store the centers
-    for (int i = 0; i < N; i++) {
-		centers.push_back({points[i].x, points[i].y, 0});
-		if (i % 2 == 0) biotopes.push_back(Biotope::Land);
-		else biotopes.push_back(Biotope::Ocean);
+	for(int i = 0; i < N; i++) {
+		centers[i] = {points[i].x, points[i].y, 0};
 	}
 
-	// Store the edges
-    const jcv_edge* edge = jcv_diagram_get_edges( &diagram );
-    while (edge) {
-		vec3 p1 = {edge->pos[0].x, edge->pos[0].y, 0 };
-		vec3 p2 = {edge->pos[1].x, edge->pos[1].y, 0 };
-        edges.push_back(std::make_tuple(p1, p2));
-        edge = jcv_diagram_get_next_edge(edge);
-    }
+	// Store the neighbors
+	const jcv_site* sites = jcv_diagram_get_sites(&diagram);
+	for(int i = 0; i < diagram.numsites; i++) {
+        const jcv_site* site = &sites[i];
+		const jcv_graphedge* edge = site->edges;
+		int idx = site->index;
+		std::vector<std::tuple<int,vec3,vec3>> v;
+
+		while (edge) {
+			vec3 p1 = {edge->pos[0].x, edge->pos[0].y, 0 };
+			vec3 p2 = {edge->pos[1].x, edge->pos[1].y, 0 };
+			if (edge->neighbor)
+				v.push_back(std::make_tuple(edge->neighbor->index, p1, p2));
+			if (p1.x == 0.0f || p1.y == 0.0f || p2.x == 0.0f || p2.y == 0.0f
+			  ||p1.x == 10.0f || p2.x == 10.0f || p2.x == 10.0f || p2.y == 10.0f) {
+				  biotopes[idx] = Biotope::Ocean;
+			}
+				
+            edge = edge->next;
+		}
+
+		neighbors[idx] = v;
+	}
 
 	// Create a mesh for the centers
-	particle_sphere.initialize(mesh_primitive_sphere(1.0f));
+	particle_sphere.initialize(mesh_primitive_sphere(0.2f));
 	particle_sphere.shading.color = { 1,0,0 };
 
 	// Always free up memory at the end
     jcv_diagram_free( &diagram );
+
+	// Timer scale
+	timer.scale = 0.5f;
 }
 
 /// Draws (and displays) a segment between a and b.
@@ -104,18 +146,32 @@ void scene_structure::display() {
 
 	// Update the current time
 	timer.update();
+	int chosen = (int) timer.t % N;
 
-	for (std::tuple<vec3, vec3>& edge: edges)
-		draw_segment(std::get<0>(edge), std::get<1>(edge));
-
+	// Draw the lines between the clusters, and the borders
+	draw_segment({0,0,0},{0,10,0});
+	draw_segment({0,10,0},{10,10,0});
+	draw_segment({10,10,0},{10,0,0});
+	draw_segment({10,0,0},{0,0,0});
+	for (int i = 0; i < N; i++) {
+		for (auto& neighbor: neighbors[i])
+			draw_segment(std::get<1>(neighbor), std::get<2>(neighbor));
+	}
+	
 	for (int i = 0; i < N; i++) {
 		vec3& center = centers[i];
 		Biotope& biotope = biotopes[i];
-		//std::cout << "New center(" << center.x << "; " << center.y << "; " << center.z << ")" << std::endl;
 		particle_sphere.transform.translation = center;
 		if (biotope == Biotope::Land) particle_sphere.shading.color = {0,1,0};
 		else if (biotope == Biotope::Ocean) particle_sphere.shading.color = {0,0,1};
 		else particle_sphere.shading.color = {0,0,0};
+		// Displays in red the points one after the other
+		if (i == chosen) {
+			particle_sphere.transform.scaling = 1.5f;
+			particle_sphere.shading.color = {1,0,0};
+		} else {
+			particle_sphere.transform.scaling = 1;
+		}
 		draw(particle_sphere, environment);
 	}
 

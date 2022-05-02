@@ -1,6 +1,8 @@
 #pragma once
 
-
+#include <iostream>
+#include <vector>
+#include <algorithm>
 #include "cgp/cgp.hpp"
 
 /// The element of the GUI that are not already stored in other structures.
@@ -42,6 +44,7 @@ struct scene_structure {
 	int N; // The number of clusters
 	std::vector<cgp::vec3> centers; // Their centers
     std::vector<std::tuple<cgp::vec3,cgp::vec3>> edges; // The edges
+    std::vector<std::vector<std::tuple<int,cgp::vec3,cgp::vec3>>> neighbors; // The neighbors
     std::vector<Biotope> biotopes; // The biotope of the cluster
 
 	/// Timer used for the animation.
