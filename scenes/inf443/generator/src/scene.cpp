@@ -54,7 +54,7 @@ void scene_structure::initialize() {
 	// Create a visual frame representing the coordinate system
 	global_frame.initialize(mesh_primitive_frame(), "Frame");
 	environment.camera.axis = camera_spherical_coordinates_axis::z;
-	environment.camera.look_at({ 2.0f,-2.0f,1.0f }, { 0,0,0 });
+	environment.camera.look_at({ -2.0f,-2.0f,3.0f }, { 5,5,0 });
 
 	// Number of clusters
 	N = 100;
