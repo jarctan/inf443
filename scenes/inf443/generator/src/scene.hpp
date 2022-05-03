@@ -42,13 +42,17 @@ public:
 	// Drawable structures to display the Voronoi diagram
 	cgp::mesh_drawable particle_sphere;
 	cgp::segments_drawable segment;
+	cgp::mesh_drawable terrain;
 
 	// Structures representing the Voronoi diagram in memory
 	// TODO: improve it
 	int N; // The number of clusters
+	int N_corners; // The number of corners
 	std::vector<cgp::vec3> centers; // Their centers
     std::vector<cgp::vec3> corners; // The corners
-    std::vector<std::vector<std::tuple<int,int,int>>> neighbors; // The neighbors
+    std::vector<std::vector<int>> mycorners; // The set of the corners of a polygon
+    std::vector<std::vector<std::tuple<int,int,int>>> neighbors; // The neighbors of a polygon
+    std::vector<std::vector<std::tuple<int,int,int>>> adjacents; // The adjacents corners of a corner
 	std::vector<std::vector<int>> touches; // The list of polygons a cluster touches
     std::vector<Biotope> biotopes; // The biotope of the cluster
     std::vector<float> heights; // The elevation of the cluster
@@ -65,6 +69,8 @@ public:
 	void display();
 	/// The display of the GUI, also called within the animation loop. 
 	void display_gui();
+	/// Create the terrain
+	void create_terrain();
 private:
 	/// Compare the heights of the two points. Used exclusively for Dijkstra
 	static bool CompareHeights(const std::pair<int,int> &a, const std::pair<int,int> &b);
