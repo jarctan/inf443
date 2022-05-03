@@ -3,6 +3,9 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <cmath>
+#include <queue>
+#include <functional>
 #include "cgp/cgp.hpp"
 
 /// The element of the GUI that are not already stored in other structures.
@@ -19,6 +22,7 @@ enum class Biotope {
 
 /// The structure of the custom scene.
 struct scene_structure {
+public:
 	// ****************************** //
 	// Elements and shapes of the scene
 	// ****************************** //
@@ -43,9 +47,10 @@ struct scene_structure {
 	// TODO: improve it
 	int N; // The number of clusters
 	std::vector<cgp::vec3> centers; // Their centers
-    std::vector<std::tuple<cgp::vec3,cgp::vec3>> edges; // The edges
-    std::vector<std::vector<std::tuple<int,cgp::vec3,cgp::vec3>>> neighbors; // The neighbors
+    std::vector<cgp::vec3> corners; // The corners
+    std::vector<std::vector<std::tuple<int,int,int>>> neighbors; // The neighbors
     std::vector<Biotope> biotopes; // The biotope of the cluster
+    std::vector<float> heights; // The elevation of the cluster
 
 	/// Timer used for the animation.
 	cgp::timer_basic timer;
@@ -53,13 +58,15 @@ struct scene_structure {
 	// ****************************** //
 	// Functions
 	// ****************************** //
-
 	/// Standard initialization to be called before the animation loop.
 	void initialize();
 	/// The frame display to be called within the animation loop.
 	void display();
 	/// The display of the GUI, also called within the animation loop. 
 	void display_gui();
+private:
+	/// Compare the heights of the two points. Used exclusively for Dijkstra
+	static bool CompareHeights(const std::pair<int,int> &a, const std::pair<int,int> &b);
 };
 
 

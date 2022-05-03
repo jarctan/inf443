@@ -31,13 +31,26 @@ void relax_points(const jcv_diagram* diagram, jcv_point* points) {
     }
 }
 
+/// This function compares the heights of two pairs of (_,height)
+/// and returns the true if the first one is higher than the second one.
+/// This is only used to create the priority queue.
+bool scene_structure::CompareHeights(const std::pair<int,int> &a, const std::pair<int,int> &b) {
+    return a.second > b.second;
+}
+
+/// Find a point in an array, and return the index of this point.
+int find_pt(std::vector<vec3> l, vec3 el) {
+	for(int i = 0; i < l.size(); i++) {
+		if (el.x == l[i].x && el.y == l[i].y && el.z == l[i].z) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 /// This function is called only once at the beginning of the program
 /// and initializes the meshes, diagrams and other structures.
 void scene_structure::initialize() {
-	// Set the behavior of the camera and its initial position
-	environment.camera.axis = camera_spherical_coordinates_axis::z;
-	environment.camera.look_at({ -1.0f, 4.0f, 2.0f } /*eye position*/, {0,0,0} /*target position*/);
-
 	// Create a visual frame representing the coordinate system
 	global_frame.initialize(mesh_primitive_frame(), "Frame");
 	environment.camera.axis = camera_spherical_coordinates_axis::z;
@@ -52,7 +65,6 @@ void scene_structure::initialize() {
 	jcv_diagram diagram;
     memset(&diagram, 0, sizeof(jcv_diagram));
 	jcv_point* points = (jcv_point*) malloc(N*sizeof(jcv_point));
-
 	for (int i = 0; i < N; i++) {
 		jcv_point pt;
 		pt.x = ((float) rand()) * 10.0f / RAND_MAX;
@@ -94,19 +106,52 @@ void scene_structure::initialize() {
 		centers[i] = {points[i].x, points[i].y, 0};
 	}
 
-	// Store the neighbors
-	const jcv_site* sites = jcv_diagram_get_sites(&diagram);
+	// Store the corners and neighbors
+    const jcv_site* sites = jcv_diagram_get_sites(&diagram);
+    for(int i = 0; i < diagram.numsites; i++) {
+        const jcv_site* site = &sites[i];
+        const jcv_graphedge* edge = site->edges;
+		int idx = site->index;
+		std::vector<std::tuple<int,int,int>> adjacents;
+
+        while( edge ) {
+			vec3 v = {edge->pos[0].x, edge->pos[0].y, 0.0};
+
+			// For each point in the edge, retrieve its index in the corners list.
+			// If it does not already exist, add it to the list (the index will then
+			// be the size of the list).
+			int pt1 = find_pt(corners, v);
+			if (pt1 == -1) {
+				pt1 = corners.size();
+				corners.push_back(v);
+			}
+
+			v = {edge->pos[1].x, edge->pos[1].y, 0.0};
+			int pt2 = find_pt(corners, v);
+			if (pt2 == -1) {
+				pt2 = corners.size();
+				corners.push_back(v);
+			}
+
+			// Add the edge in the form of (neighbor, idx of 1st corner, idx of 2nd corner)
+			if (edge->neighbor)
+				adjacents.push_back(std::make_tuple(edge->neighbor->index, pt1, pt2));
+				
+            edge = edge->next;
+		}
+
+		neighbors[idx] = adjacents;
+	}
+
+	// Create the biotopes
 	for(int i = 0; i < diagram.numsites; i++) {
         const jcv_site* site = &sites[i];
-		const jcv_graphedge* edge = site->edges;
+        const jcv_graphedge* edge = site->edges;
 		int idx = site->index;
-		std::vector<std::tuple<int,vec3,vec3>> v;
-
+		
 		while (edge) {
 			vec3 p1 = {edge->pos[0].x, edge->pos[0].y, 0 };
 			vec3 p2 = {edge->pos[1].x, edge->pos[1].y, 0 };
-			if (edge->neighbor)
-				v.push_back(std::make_tuple(edge->neighbor->index, p1, p2));
 			if (p1.x == 0.0f || p1.y == 0.0f || p2.x == 0.0f || p2.y == 0.0f
 			  ||p1.x == 10.0f || p2.x == 10.0f || p2.x == 10.0f || p2.y == 10.0f) {
 				  biotopes[idx] = Biotope::Ocean;
@@ -114,8 +159,42 @@ void scene_structure::initialize() {
 				
             edge = edge->next;
 		}
+	}
+	
+	// Compute the height
+	heights.resize(N);
+	for (int v = 0; v < N; v++) {
+		if (biotopes[v] == Biotope::Ocean) {
+        	heights[v] = 0;
+		} else {
+			heights[v] = INFINITY;
+		}
+	}
+	// Find the source of the shortest path algorithm
+	int source = 0;
+	while (biotopes[source] != Biotope::Ocean) {
+		source++;
+	}
+	heights[source] = 0;
 
-		neighbors[idx] = v;
+	// Build the priority queue
+	std::priority_queue<std::pair<int,int>, std::vector<std::pair<int,int>>, std::function<bool(std::pair<int,int>, std::pair<int,int>)>> Q(CompareHeights);
+	for (int v = 0; v < N; v++) {
+		Q.push(std::pair<int,int>(v, heights[v]));
+	}
+	
+	while (!Q.empty()) {
+		int u = Q.top().first;
+		Q.pop();
+		for (auto& neighbor: neighbors[u]) {
+			int v = std::get<0>(neighbor);
+			float dist = norm(centers[u] - centers[v]);
+			float alt = heights[u] + dist;
+			if (alt < heights[v]) {
+				heights[v] = alt;
+				Q.push(std::pair<int,int>(v, heights[v]));
+			}
+		}
 	}
 
 	// Create a mesh for the centers
@@ -155,13 +234,14 @@ void scene_structure::display() {
 	draw_segment({10,0,0},{0,0,0});
 	for (int i = 0; i < N; i++) {
 		for (auto& neighbor: neighbors[i])
-			draw_segment(std::get<1>(neighbor), std::get<2>(neighbor));
+			draw_segment(corners[std::get<1>(neighbor)], corners[std::get<2>(neighbor)]);
 	}
-	
+
 	for (int i = 0; i < N; i++) {
 		vec3& center = centers[i];
 		Biotope& biotope = biotopes[i];
 		particle_sphere.transform.translation = center;
+		particle_sphere.transform.translation.z = heights[i];
 		if (biotope == Biotope::Land) particle_sphere.shading.color = {0,1,0};
 		else if (biotope == Biotope::Ocean) particle_sphere.shading.color = {0,0,1};
 		else particle_sphere.shading.color = {0,0,0};
