@@ -159,8 +159,8 @@ void scene_structure::initialize() {
 				
             edge = edge->next;
 		}
-		float threshold = 0.5f;
-		if (noise_perlin({centers[idx].x, centers[idx].y}, 6, 0.37f, 2.2f) < threshold) {
+		float threshold = 1.0f;
+		if (noise_perlin({centers[idx].x, centers[idx].y}, 6, 0.7f, 0.6f) < threshold) {
 			biotopes[idx] = Biotope::Ocean;
 		}
 	}
