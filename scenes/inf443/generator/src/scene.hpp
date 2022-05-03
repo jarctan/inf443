@@ -49,6 +49,7 @@ public:
 	std::vector<cgp::vec3> centers; // Their centers
     std::vector<cgp::vec3> corners; // The corners
     std::vector<std::vector<std::tuple<int,int,int>>> neighbors; // The neighbors
+	std::vector<std::vector<int>> touches; // The list of polygons a cluster touches
     std::vector<Biotope> biotopes; // The biotope of the cluster
     std::vector<float> heights; // The elevation of the cluster
 

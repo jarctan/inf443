@@ -54,10 +54,10 @@ void scene_structure::initialize() {
 	// Create a visual frame representing the coordinate system
 	global_frame.initialize(mesh_primitive_frame(), "Frame");
 	environment.camera.axis = camera_spherical_coordinates_axis::z;
-	environment.camera.look_at({ 2.0f,-2.0f,1.0f }, { 0,0,0 });
+	environment.camera.look_at({ 5.0f,5.0f,-10.0f }, { 5,5,0 });
 
 	// Number of clusters
-	N = 100;
+	N = 6000;
 	centers.resize(N);
 	biotopes.resize(N, Biotope::Land);
 	neighbors.resize(N);
@@ -158,6 +158,10 @@ void scene_structure::initialize() {
 			}
 				
             edge = edge->next;
+		}
+		float threshold = 0.5f;
+		if (noise_perlin({centers[idx].x, centers[idx].y}, 6, 0.37f, 2.2f) < threshold) {
+			biotopes[idx] = Biotope::Ocean;
 		}
 	}
 	
