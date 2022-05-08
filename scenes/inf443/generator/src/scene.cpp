@@ -241,7 +241,7 @@ void scene_structure::initialize() {
 	// Create a visual frame representing the coordinate system
 	global_frame.initialize(mesh_primitive_frame(), "Frame");
 	environment.camera.axis = camera_spherical_coordinates_axis::z;
-	environment.camera.look_at({ 5.0f,5.0f,-10.0f }, { 5,5,0 });
+	environment.camera.look_at({ 5.0f,5.0f,10.0f }, { 5,5,0 });
 
 	// Create a mesh for the centers
 	particle_sphere.initialize(mesh_primitive_sphere(0.05f));
