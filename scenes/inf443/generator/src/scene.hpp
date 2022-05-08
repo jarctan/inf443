@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include "cgp/cgp.hpp"
 
 /// The element of the GUI that are not already stored in other structures.

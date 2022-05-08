@@ -2,6 +2,7 @@
 #include "cgp/cgp.hpp" 
 #include <iostream>
 #include "scene.hpp"
+#include "movement.hpp"
 
 // *************************** //
 // Global Variables
@@ -25,7 +26,7 @@ int main(int, char* argv[]) {
 	// ************************ //
 	
 	// Standard Initialization with dimension in pixels
-	GLFWwindow* window = standard_window_initialization(); 
+	GLFWwindow* window = standard_window_initialization();
 
 	// Custom scene initialization
 	std::cout << "Initialize data of the scene ..." << std::endl;
@@ -66,7 +67,7 @@ void window_size_callback(GLFWwindow* , int width, int height) {
 }
 
 // This function is called everytime the mouse is moved
-void mouse_move_callback(GLFWwindow* /*window*/, double xpos, double ypos) {
+void mouse_move_callback(GLFWwindow* window, double xpos, double ypos) {
 	scene.inputs.mouse_position_update( { xpos, ypos } );
 
 	// Default trackball mode - change this behavior as you wish
@@ -81,6 +82,8 @@ void mouse_click_callback(GLFWwindow* /*window*/, int button, int action, int /*
 // This function is called everytime a keyboard touch is pressed/released
 void keyboard_callback(GLFWwindow* /*window*/, int key, int , int action, int /*mods*/) {
 	scene.inputs.keyboard.update_from_glfw_key(key, action);
+
+	movement.handleKeyPress();
 }
 
 // Standard initialization procedure
