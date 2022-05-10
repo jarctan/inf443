@@ -71,7 +71,8 @@ void mouse_move_callback(GLFWwindow* window, double xpos, double ypos) {
 	scene.inputs.mouse_position_update( { xpos, ypos } );
 
 	// Default trackball mode - change this behavior as you wish
-	camera_standard_behavior_rotation_spherical_coordinates(scene.environment.camera, scene.inputs);
+	//camera_standard_behavior_rotation_spherical_coordinates(scene.environment.camera, scene.inputs);
+	handleMouseMove();
 }
 
 // This function is called everytime a mouse button is clicked/released
