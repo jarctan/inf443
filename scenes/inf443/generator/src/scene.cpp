@@ -54,11 +54,10 @@ int find_pt(std::vector<vec3> l, vec3 el) {
 /// This function is called only once at the beginning of the program
 /// and initializes the meshes, diagrams and other structures.
 void scene_structure::initialize() {
-	//unsigned seed = chrono::steady_clock::now().time_since_epoch().count(); 
-    //default_random_engine e(seed);
+    std::default_random_engine e(time(NULL));
 
 	// Number of clusters
-	N = 4000;
+	N = 1000;
 	centers.resize(N);
 	biotopes.resize(N, Biotope::Land);
 	neighbors.resize(N);
@@ -264,9 +263,9 @@ void scene_structure::initialize() {
 	}
 
 	// We define snow biotopes based on elevation
-    //normal_distribution<double> distSnow(SNOW_HEIGHT,SNOW_STD); 
+    std::normal_distribution<double> distSnow(SNOW_HEIGHT,SNOW_STD); 
 	for (int idx = 0; idx < N; idx++) {
-		if (centers[idx].z > SNOW_HEIGHT && biotopes[idx] == Biotope::Land) {
+		if (centers[idx].z > distSnow(e) && biotopes[idx] == Biotope::Land) {
 			biotopes[idx] = Biotope::Snow;
 		}
 	}
@@ -310,8 +309,7 @@ void scene_structure::display() {
 
 	// Draw the lines between the clusters, and the borders
 	draw(sea, environment);
-	for(mesh_drawable& polygon: polygons)
-		draw(polygon, environment);
+	draw(terrain, environment);
 
 	if (gui.display_wireframe);
 }
@@ -326,15 +324,15 @@ void scene_structure::create_terrain() {
 	// Initialize and sets the right color for the terrain
 	sea.initialize(sea_mesh, "sea");
 	sea.shading.color = { 0,0.412f,0.58f };
-	sea.shading.phong.specular = 0.2f;
+	sea.shading.phong.specular = 0;
 
-    // Fill terrain geometry
+    // Terrain geometry
+	mesh terrain_mesh;
     for(int k = 0; k < N; k++) {
 		// The following convention is being used:
 		// the first point is the centers of the polygon,
 		// then the following points are its corners.
 		mesh polygon_mesh;
-		mesh_drawable polygon;
 		const int center_idx = 0;
 
 		vec3 color;
@@ -366,11 +364,10 @@ void scene_structure::create_terrain() {
 
 		// Apply defaults
 		polygon_mesh.fill_empty_field();
-
-		// Initialize and sets the right color for the land
-		polygon.initialize(polygon_mesh, "Land");
-		polygon.shading.phong.specular = 0.0f; // non-specular land material
-
-		polygons.push_back(polygon);
+		terrain_mesh.push_back(polygon_mesh);
 	}
+
+	// Initialize and sets the right color for the land
+	terrain.initialize(terrain_mesh, "Terrain");
+	terrain.shading.phong.specular = 0.0f; // non-specular land material
 }

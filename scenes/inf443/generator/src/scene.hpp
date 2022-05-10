@@ -7,7 +7,6 @@
 #include <queue>
 #include <functional>
 #include <random>
-#include <chrono>
 #include "cgp/cgp.hpp"
 
 /// The element of the GUI that are not already stored in other structures.
@@ -47,7 +46,7 @@ public:
 	cgp::mesh_drawable particle_sphere;
 	cgp::segments_drawable segment;
 	cgp::mesh_drawable sea;
-	std::vector<cgp::mesh_drawable> polygons;
+	cgp::mesh_drawable terrain;
 
 	// Structures representing the Voronoi diagram in memory
 	// TODO: improve it
