@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cgp/cgp.hpp"
+#include "environment_camera_head.hpp"
 
 /// The element of the GUI that are not already stored in other structures.
 struct gui_parameters {
@@ -18,7 +19,7 @@ struct scene_structure {
 	/// The standard global frame.
 	cgp::mesh_drawable global_frame;
 	/// Standard environment controler.
-	cgp::scene_environment_basic_camera_spherical_coords environment;
+	scene_environment_camera_head environment;
 	/// Storage for inputs status (mouse, keyboard, window dimension).
 	cgp::inputs_interaction_parameters inputs;
 
