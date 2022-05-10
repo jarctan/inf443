@@ -5,6 +5,7 @@
 #include "jc_voronoi_clip.h"
 
 const float SNOW_HEIGHT = 0.8f;
+const float SNOW_STD = 0.2f;
 
 using namespace cgp;
 
@@ -53,8 +54,11 @@ int find_pt(std::vector<vec3> l, vec3 el) {
 /// This function is called only once at the beginning of the program
 /// and initializes the meshes, diagrams and other structures.
 void scene_structure::initialize() {
+	//unsigned seed = chrono::steady_clock::now().time_since_epoch().count(); 
+    //default_random_engine e(seed);
+
 	// Number of clusters
-	N = 1000;
+	N = 4000;
 	centers.resize(N);
 	biotopes.resize(N, Biotope::Land);
 	neighbors.resize(N);
@@ -260,6 +264,7 @@ void scene_structure::initialize() {
 	}
 
 	// We define snow biotopes based on elevation
+    //normal_distribution<double> distSnow(SNOW_HEIGHT,SNOW_STD); 
 	for (int idx = 0; idx < N; idx++) {
 		if (centers[idx].z > SNOW_HEIGHT && biotopes[idx] == Biotope::Land) {
 			biotopes[idx] = Biotope::Snow;
@@ -305,7 +310,8 @@ void scene_structure::display() {
 
 	// Draw the lines between the clusters, and the borders
 	draw(sea, environment);
-	draw(terrain, environment);
+	for(mesh_drawable& polygon: polygons)
+		draw(polygon, environment);
 
 	if (gui.display_wireframe);
 }
@@ -322,65 +328,49 @@ void scene_structure::create_terrain() {
 	sea.shading.color = { 0,0.412f,0.58f };
 	sea.shading.phong.specular = 0.2f;
 
-	// The following convention is being used:
-	// the first N points are the centers of the polygons,
-	// then the N_corners following are the points of the corners.
-    mesh terrain_mesh;
-    terrain_mesh.position.resize(N + N_corners);
-    terrain_mesh.color.resize(N + N_corners);
-
     // Fill terrain geometry
-    for(int k = 0; k < N; k++)
-		terrain_mesh.position[k] = centers[k];
-    for(int k = 0; k < N_corners; k++)
-		terrain_mesh.position[N+k] = corners[k];
-	
     for(int k = 0; k < N; k++) {
-		if (biotopes[k] == Biotope::Ocean) {
-			terrain_mesh.color[k] = vec3(0,0.412f,0.58f);
-		} else if (biotopes[k] == Biotope::Lake) {
-			terrain_mesh.color[k] = vec3(0.2f,0.59f,0.885f);
-		} else if (biotopes[k] == Biotope::Snow) {
-			terrain_mesh.color[k] = vec3(1.0f,1.0f,1.0f);
-		} else {
-			terrain_mesh.color[k] = vec3(0.6f,0.85f,0.5f);
+		// The following convention is being used:
+		// the first point is the centers of the polygon,
+		// then the following points are its corners.
+		mesh polygon_mesh;
+		mesh_drawable polygon;
+		const int center_idx = 0;
+
+		vec3 color;
+		if (biotopes[k] == Biotope::Ocean)
+			color = vec3(0,0.412f,0.58f);
+		else if (biotopes[k] == Biotope::Lake)
+			color = vec3(0.2f,0.59f,0.885f);
+		else if (biotopes[k] == Biotope::Snow)
+			color = vec3(1.0f,1.0f,1.0f);
+		else
+			color = vec3(0.6f,0.85f,0.5f);
+
+		polygon_mesh.position.push_back(centers[k]);
+		polygon_mesh.color.push_back(color);
+		for(int& corner: mycorners[k]) {
+			polygon_mesh.position.push_back(corners[corner]);
+			polygon_mesh.color.push_back(color);
 		}
-	}
 
-	for (int k = 0; k < N_corners; k++) {
-		vec3 color = vec3(0,0,0);
-		int n = 0;
-		for (int& poly: touches[k]) {
-			color += terrain_mesh.color[poly];
-			n++;
+		// Generate triangle organization
+		// The triangles are constructed as follows: a triangle is made up of
+		// the center of a polygon, and the vectices of an edge of this polygon
+		for(int i = 0; i < mycorners[k].size(); i++) {
+			int corner_1 = 1+(i%mycorners[k].size());
+			int corner_2 = 1+((i+1)%mycorners[k].size());
+        	uint3 triangle = {center_idx, corner_1, corner_2};
+        	polygon_mesh.connectivity.push_back(triangle);
 		}
-		color /= n;
-		terrain_mesh.color[k+N] = color;
+
+		// Apply defaults
+		polygon_mesh.fill_empty_field();
+
+		// Initialize and sets the right color for the land
+		polygon.initialize(polygon_mesh, "Land");
+		polygon.shading.phong.specular = 0.0f; // non-specular land material
+
+		polygons.push_back(polygon);
 	}
-
-	for (int idx = 0; idx < N + N_corners; idx++) {
-		// Compute local parametric coordinates (u,v) \in [0,1]
-    	const float u = (terrain_mesh.position[idx].x+10.0f)/20.0f;
-    	const float v = (terrain_mesh.position[idx].y+10.0f)/20.0f;
-
-		terrain_mesh.position[idx].x += noise_perlin({u, v}, 3, 0.5f, 6.0f);
-		terrain_mesh.position[idx].y += noise_perlin({u, v}, 3, 0.3f, 3.0f);
-	}
-
-    // Generate triangle organization
-	// The triangles are constructed as follows: a triangle is made up of
-	// the center of a polygon, and the vectices of an edge of this polygon
-    for(int k = 0; k < N; k++) {
-		for (auto& neighbor: neighbors[k]) {
-        	uint3 triangle = {k, N+std::get<1>(neighbor), N+std::get<2>(neighbor)};
-        	terrain_mesh.connectivity.push_back(triangle);
-		}
-    }
-
-	// Apply defaults
-	terrain_mesh.fill_empty_field(); 
-
-	// Initialize and sets the right color for the terrain
-	terrain.initialize(terrain_mesh, "terrain");
-	terrain.shading.phong.specular = 0.0f; // non-specular terrain material
 }
