@@ -53,7 +53,8 @@ struct scene_structure {
 	void display_gui();
 };
 
-
+void handleKeyPress();
+void handleMouseMove();
 
 
 

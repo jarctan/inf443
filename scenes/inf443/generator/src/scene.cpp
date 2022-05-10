@@ -29,17 +29,41 @@ void relax_points(const jcv_diagram* diagram, jcv_point* points) {
     }
 }
 
+void handleKeyPress() {
+
+	inputs_keyboard_parameters const& keyboard = inputs.keyboard;
+	camera_head& camera = environment.camera;
+
+	// The camera moves forward all the time
+	//   We consider in this example a constant velocity, so the displacement is: velocity * dt * front-camera-vector
+	float const dt = timer.update();
+	vec3 const forward_displacement = gui.speed * 0.1f * dt * camera.front();
+	camera.position_camera += forward_displacement;
+
+	// The camera rotates if we press on the arrow keys
+	//  The rotation is only applied to the roll and pitch degrees of freedom.
+	float const pitch = 0.5f; // speed of the pitch
+	float const roll = 0.7f; // speed of the roll
+	if (keyboard.up)
+		camera.manipulator_rotate_roll_pitch_yaw(0, -pitch * dt, 0);
+	if (keyboard.down)
+		camera.manipulator_rotate_roll_pitch_yaw(0, pitch * dt, 0);
+	if (keyboard.right)
+		camera.manipulator_rotate_roll_pitch_yaw(roll * dt, 0, 0);
+	if (keyboard.left)
+		camera.manipulator_rotate_roll_pitch_yaw(-roll * dt, 0, 0);
+}
+
+void handleMouseMove() {
+
+}
+
 /// This function is called only once at the beginning of the program
 /// and initializes the meshes, diagrams and other structures.
 void scene_structure::initialize() {
 	// Set the behavior of the camera and its initial position
-	environment.camera.axis = camera_spherical_coordinates_axis::z;
-	environment.camera.look_at({ -1.0f, 4.0f, 2.0f } /*eye position*/, {0,0,0} /*target position*/);
-
-	// Create a visual frame representing the coordinate system
-	global_frame.initialize(mesh_primitive_frame(), "Frame");
-	environment.camera.axis = camera_spherical_coordinates_axis::z;
-	environment.camera.look_at({ 2.0f,-2.0f,1.0f }, { 0,0,0 });
+	environment.camera.position_camera = { 0.5f, 0.5f, -2.0f };
+	environment.camera.manipulator_rotate_roll_pitch_yaw(0, 0, Pi / 2.0f);
 
 	// Number of clusters
 	N = 1000;
