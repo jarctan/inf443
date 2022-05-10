@@ -17,7 +17,9 @@ struct gui_parameters {
 
 enum class Biotope {
 	Land,
-	Ocean
+	Ocean,
+	Lake,
+	Snow,
 };
 
 /// The structure of the custom scene.
@@ -43,19 +45,22 @@ public:
 	cgp::mesh_drawable particle_sphere;
 	cgp::segments_drawable segment;
 	cgp::mesh_drawable terrain;
+	cgp::mesh_drawable sea;
 
 	// Structures representing the Voronoi diagram in memory
 	// TODO: improve it
 	int N; // The number of clusters
-	int N_corners; // The number of corners
 	std::vector<cgp::vec3> centers; // Their centers
-    std::vector<cgp::vec3> corners; // The corners
     std::vector<std::vector<int>> mycorners; // The set of the corners of a polygon
     std::vector<std::vector<std::tuple<int,int,int>>> neighbors; // The neighbors of a polygon
-    std::vector<std::vector<std::tuple<int,int,int>>> adjacents; // The adjacents corners of a corner
-	std::vector<std::vector<int>> touches; // The list of polygons a cluster touches
     std::vector<Biotope> biotopes; // The biotope of the cluster
-    std::vector<float> heights; // The elevation of the cluster
+
+	int N_corners; // The number of corners
+    std::vector<cgp::vec3> corners; // The corners
+	std::vector<std::vector<int>> touches; // The list of polygons a corner  touches
+    std::vector<std::vector<std::tuple<int,int,int>>> adjacents; // The adjacents corners of a corner
+    std::vector<float> heights; // The elevation of a corner. Used only during computations, use corners[i].z after
+	std::vector<int> downslope; // Index of the corner in the downhill direction, -1 if none
 
 	/// Timer used for the animation.
 	cgp::timer_basic timer;

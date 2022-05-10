@@ -4,6 +4,8 @@
 #define JC_VORONOI_CLIP_IMPLEMENTATION
 #include "jc_voronoi_clip.h"
 
+const float SNOW_HEIGHT = 0.8f;
+
 using namespace cgp;
 
 /// Place the points at the centers (centroid) of their respective clusters
@@ -52,7 +54,7 @@ int find_pt(std::vector<vec3> l, vec3 el) {
 /// and initializes the meshes, diagrams and other structures.
 void scene_structure::initialize() {
 	// Number of clusters
-	N = 3000;
+	N = 1000;
 	centers.resize(N);
 	biotopes.resize(N, Biotope::Land);
 	neighbors.resize(N);
@@ -152,11 +154,14 @@ void scene_structure::initialize() {
 
 		neighbors[idx] = l;
 	}
+
 	N_corners = corners.size();
+	heights.resize(N_corners);
+	downslope.resize(N_corners);
 
 	std::cout << "End of preprocessing Voronoi diagrams";
 
-	// Create the biotopes
+	// Create the ocean border
 	for(int i = 0; i < diagram.numsites; i++) {
         const jcv_site* site = &sites[i];
         const jcv_graphedge* edge = site->edges;
@@ -166,7 +171,7 @@ void scene_structure::initialize() {
 			vec3 p1 = {edge->pos[0].x, edge->pos[0].y, 0 };
 			vec3 p2 = {edge->pos[1].x, edge->pos[1].y, 0 };
 			if (p1.x <= 0.2f || p1.y <= 0.2f || p2.x <= 0.2f || p2.y <= 0.2f
-			  ||p1.x >= 9.8f || p2.x >= 9.8f || p2.x >= 9.8f || p2.y >= 9.8f) {
+			  ||p1.x >= 9.8f || p1.y >= 9.8f || p2.x >= 9.8f || p2.y >= 9.8f) {
 				  biotopes[idx] = Biotope::Ocean;
 			}
 				
@@ -177,13 +182,12 @@ void scene_structure::initialize() {
 		// * noise_perlin: 6, 0.37f, 2.2f
 		// * noise < threshold
 		float threshold = 1.0f;
-		if (noise_perlin({centers[idx].x, centers[idx].y}, 6, 0.7f, 0.6f) < threshold) {
-			biotopes[idx] = Biotope::Ocean;
+		if (noise_perlin({centers[idx].x, centers[idx].y}, 2, 0.1f, 1.0f) > threshold) {
+			biotopes[idx] = Biotope::Lake;
 		}
 	}
 	
-	// Compute the height
-	heights.resize(N_corners);
+	// Compute the height, and extend oceans at the same time
 	// Find the source of the shortest path algorithm
 	int source = 0;
 	for (int i = 0; i < N_corners; i++) {
@@ -200,9 +204,11 @@ void scene_structure::initialize() {
 	heights[source] = 0;
 
 	// Build the priority queue
+	// At first, no corner has downslope
 	std::priority_queue<std::pair<int,int>, std::vector<std::pair<int,int>>, std::function<bool(std::pair<int,int>, std::pair<int,int>)>> Q(CompareHeights);
 	for (int v = 0; v < N_corners; v++) {
 		Q.push(std::pair<int,int>(v, heights[v]));
+		downslope[v] = -1;
 	}
 	
 	while (!Q.empty()) {
@@ -210,9 +216,24 @@ void scene_structure::initialize() {
 		Q.pop();
 		for (auto& adjacent: adjacents[u]) {
 			int v = std::get<0>(adjacent);
-			float dist = norm(corners[u] - corners[v]);
-			float alt = heights[u] + dist;
+			int poly_1 = std::get<1>(adjacent);
+			int poly_2 = std::get<1>(adjacent);
+			float dist;
+			if (biotopes[poly_1] == Biotope::Ocean) {
+				if (biotopes[poly_2] == Biotope::Lake) biotopes[poly_2] = Biotope::Ocean;
+				dist = 0;
+			} else if (biotopes[poly_2] == Biotope::Ocean) {
+				if (biotopes[poly_1] == Biotope::Lake) biotopes[poly_1] = Biotope::Ocean;
+				dist = 0;
+			} else if (biotopes[poly_1] == Biotope::Lake || biotopes[poly_2] == Biotope::Lake) {
+				dist = 0;
+			} else {
+				dist = norm(corners[u] - corners[v]);
+			}
+
+			float alt = heights[u] + dist*(rand() * 3.0f / RAND_MAX);
 			if (alt < heights[v]) {
+				if (dist > 0) downslope[v] = u;
 				heights[v] = alt;
 				Q.push(std::pair<int,int>(v, heights[v]));
 			}
@@ -238,10 +259,17 @@ void scene_structure::initialize() {
 		centers[v].z = mean/((float) n);
 	}
 
+	// We define snow biotopes based on elevation
+	for (int idx = 0; idx < N; idx++) {
+		if (centers[idx].z > SNOW_HEIGHT && biotopes[idx] == Biotope::Land) {
+			biotopes[idx] = Biotope::Snow;
+		}
+	}
+
 	// Create a visual frame representing the coordinate system
 	global_frame.initialize(mesh_primitive_frame(), "Frame");
 	environment.camera.axis = camera_spherical_coordinates_axis::z;
-	environment.camera.look_at({ 5.0f,5.0f,-10.0f }, { 5,5,0 });
+	environment.camera.look_at({ 5.0f,5.0f,15.0f }, { 5,5,0 });
 
 	// Create a mesh for the centers
 	particle_sphere.initialize(mesh_primitive_sphere(0.05f));
@@ -276,10 +304,7 @@ void scene_structure::display() {
 	timer.update();
 
 	// Draw the lines between the clusters, and the borders
-	draw_segment({0,0,0},{0,10,0});
-	draw_segment({0,10,0},{10,10,0});
-	draw_segment({10,10,0},{10,0,0});
-	draw_segment({10,0,0},{0,0,0});
+	draw(sea, environment);
 	draw(terrain, environment);
 
 	if (gui.display_wireframe);
@@ -290,19 +315,57 @@ void scene_structure::display_gui() {
 	ImGui::Checkbox("Wireframe", &gui.display_wireframe);
 }
 
-void scene_structure::create_terrain()
-{
+void scene_structure::create_terrain() {
+	mesh sea_mesh = mesh_primitive_grid({-20,-20,-0.01f},{20,-20,-0.01f},{20,20,-0.01f},{-20,20,-0.01f});
+	// Initialize and sets the right color for the terrain
+	sea.initialize(sea_mesh, "sea");
+	sea.shading.color = { 0,0.412f,0.58f };
+	sea.shading.phong.specular = 0.2f;
+
 	// The following convention is being used:
 	// the first N points are the centers of the polygons,
 	// then the N_corners following are the points of the corners.
     mesh terrain_mesh;
     terrain_mesh.position.resize(N + N_corners);
+    terrain_mesh.color.resize(N + N_corners);
 
     // Fill terrain geometry
     for(int k = 0; k < N; k++)
 		terrain_mesh.position[k] = centers[k];
     for(int k = 0; k < N_corners; k++)
 		terrain_mesh.position[N+k] = corners[k];
+	
+    for(int k = 0; k < N; k++) {
+		if (biotopes[k] == Biotope::Ocean) {
+			terrain_mesh.color[k] = vec3(0,0.412f,0.58f);
+		} else if (biotopes[k] == Biotope::Lake) {
+			terrain_mesh.color[k] = vec3(0.2f,0.59f,0.885f);
+		} else if (biotopes[k] == Biotope::Snow) {
+			terrain_mesh.color[k] = vec3(1.0f,1.0f,1.0f);
+		} else {
+			terrain_mesh.color[k] = vec3(0.6f,0.85f,0.5f);
+		}
+	}
+
+	for (int k = 0; k < N_corners; k++) {
+		vec3 color = vec3(0,0,0);
+		int n = 0;
+		for (int& poly: touches[k]) {
+			color += terrain_mesh.color[poly];
+			n++;
+		}
+		color /= n;
+		terrain_mesh.color[k+N] = color;
+	}
+
+	for (int idx = 0; idx < N + N_corners; idx++) {
+		// Compute local parametric coordinates (u,v) \in [0,1]
+    	const float u = (terrain_mesh.position[idx].x+10.0f)/20.0f;
+    	const float v = (terrain_mesh.position[idx].y+10.0f)/20.0f;
+
+		terrain_mesh.position[idx].x += noise_perlin({u, v}, 3, 0.5f, 6.0f);
+		terrain_mesh.position[idx].y += noise_perlin({u, v}, 3, 0.3f, 3.0f);
+	}
 
     // Generate triangle organization
 	// The triangles are constructed as follows: a triangle is made up of
@@ -319,6 +382,5 @@ void scene_structure::create_terrain()
 
 	// Initialize and sets the right color for the terrain
 	terrain.initialize(terrain_mesh, "terrain");
-	terrain.shading.color = { 0.6f,0.85f,0.5f };
 	terrain.shading.phong.specular = 0.0f; // non-specular terrain material
 }
