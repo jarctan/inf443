@@ -2,7 +2,6 @@
 #include "cgp/cgp.hpp" 
 #include <iostream>
 #include "scene.hpp"
-#include "movement.hpp"
 
 // *************************** //
 // Global Variables
@@ -72,7 +71,7 @@ void mouse_move_callback(GLFWwindow* window, double xpos, double ypos) {
 
 	// Default trackball mode - change this behavior as you wish
 	//camera_standard_behavior_rotation_spherical_coordinates(scene.environment.camera, scene.inputs);
-	handleMouseMove();
+	scene.handleMouseMove(window);
 }
 
 // This function is called everytime a mouse button is clicked/released
@@ -81,10 +80,10 @@ void mouse_click_callback(GLFWwindow* /*window*/, int button, int action, int /*
 }
 
 // This function is called everytime a keyboard touch is pressed/released
-void keyboard_callback(GLFWwindow* /*window*/, int key, int , int action, int /*mods*/) {
+void keyboard_callback(GLFWwindow* window, int key, int , int action, int /*mods*/) {
 	scene.inputs.keyboard.update_from_glfw_key(key, action);
 
-	handleKeyPress();
+	scene.handleKeyPress(window);
 }
 
 // Standard initialization procedure

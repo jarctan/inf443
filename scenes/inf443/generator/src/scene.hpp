@@ -51,10 +51,15 @@ struct scene_structure {
 	void display();
 	/// The display of the GUI, also called within the animation loop. 
 	void display_gui();
+
+
+	//variables and methods for the player movement
+	float speed;
+	void handleKeyPress(GLFWwindow* window);
+	void handleMouseMove(GLFWwindow* window);
 };
 
-void handleKeyPress();
-void handleMouseMove();
+
 
 
 
