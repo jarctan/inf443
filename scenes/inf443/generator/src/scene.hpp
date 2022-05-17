@@ -54,8 +54,12 @@ struct scene_structure {
 
 
 	//variables and methods for the player movement
-	float speed;
-	void handleKeyPress(GLFWwindow* window);
+	float speed = 100;
+	float initial_camera_pitch = cgp::Pi / 2.0f;
+	float initial_camera_yaw = 0;
+	float camera_pitch = 0;
+	float camera_yaw = 0;
+	void handleKeyPress(GLFWwindow* window, int key, int action);
 	void handleMouseMove(GLFWwindow* window);
 };
 

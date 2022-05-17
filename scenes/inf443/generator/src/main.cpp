@@ -27,6 +27,9 @@ int main(int, char* argv[]) {
 	// Standard Initialization with dimension in pixels
 	GLFWwindow* window = standard_window_initialization();
 
+	//Makes the mouse move more smoothly. Implement a button to leave scene before decommenting
+	//glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
 	// Custom scene initialization
 	std::cout << "Initialize data of the scene ..." << std::endl;
 	scene.initialize();
@@ -83,7 +86,7 @@ void mouse_click_callback(GLFWwindow* /*window*/, int button, int action, int /*
 void keyboard_callback(GLFWwindow* window, int key, int , int action, int /*mods*/) {
 	scene.inputs.keyboard.update_from_glfw_key(key, action);
 
-	scene.handleKeyPress(window);
+	scene.handleKeyPress(window, key, action);
 }
 
 // Standard initialization procedure

@@ -29,7 +29,7 @@ void relax_points(const jcv_diagram* diagram, jcv_point* points) {
     }
 }
 
-void scene_structure::handleKeyPress(GLFWwindow* window) {
+void scene_structure::handleKeyPress(GLFWwindow* window, int key, int action) {
 
 	inputs_keyboard_parameters const& keyboard = inputs.keyboard;
 	camera_head& camera = environment.camera;
@@ -37,21 +37,15 @@ void scene_structure::handleKeyPress(GLFWwindow* window) {
 	// The camera moves forward all the time
 	//   We consider in this example a constant velocity, so the displacement is: velocity * dt * front-camera-vector
 	float const dt = timer.update();
-	vec3 const forward_displacement = speed * 0.1f * dt * camera.front();
-	camera.position_camera += forward_displacement;
+	vec3 displacement;
 
-	// The camera rotates if we press on the arrow keys
-	//  The rotation is only applied to the roll and pitch degrees of freedom.
-	float const pitch = 0.5f; // speed of the pitch
-	float const yaw = 0.7f; // speed of the roll
-	if (keyboard.up)
-		camera.manipulator_rotate_roll_pitch_yaw(0, pitch * dt, 0);
-	if (keyboard.down)
-		camera.manipulator_rotate_roll_pitch_yaw(0, -pitch * dt, 0);
-	if (keyboard.right)
-		camera.manipulator_rotate_roll_pitch_yaw(0, 0, -yaw * dt);
-	if (keyboard.left)
-		camera.manipulator_rotate_roll_pitch_yaw(0, 0, yaw * dt);
+	if (key == GLFW_KEY_W && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+		displacement = speed * dt * camera.front();
+	}
+
+	std::cout << camera.position() << "\n";
+
+	camera.position_camera += displacement;
 }
 
 void scene_structure::handleMouseMove(GLFWwindow* window) {
@@ -63,7 +57,17 @@ void scene_structure::handleMouseMove(GLFWwindow* window) {
 	camera_head& camera = environment.camera;
 	float const dt = timer.update();
 
-	camera.manipulator_rotate_roll_pitch_yaw(0, (screenHeight / 2.0f - ypos) * dt / 50.0f, (screenWidth / 2.0f - xpos) * dt / 50.0f);
+	rotation_transform initialOrientation = rotation_transform::from_axis_angle(vec3(1, 0, 0), initial_camera_pitch);
+
+	camera_yaw += (screenWidth / 2.0f - xpos) * dt / 50.0f;
+	camera_pitch += (screenHeight / 2.0f - ypos) * dt / 50.0f;
+
+	//std::cout << "yaw = " << camera_yaw << " pitch = " << camera_pitch << "\n";
+
+	rotation_transform r_pitch = rotation_transform::from_axis_angle(vec3(1, 0, 0), camera_pitch);
+	rotation_transform r_yaw = rotation_transform::from_axis_angle(vec3( 0,1,0 ), camera_yaw);
+	
+	camera.orientation_camera = initialOrientation * r_yaw * r_pitch;
 }
 
 /// This function is called only once at the beginning of the program
@@ -71,7 +75,7 @@ void scene_structure::handleMouseMove(GLFWwindow* window) {
 void scene_structure::initialize() {
 	// Set the behavior of the camera and its initial position
 	environment.camera.position_camera = { 5.0f, 5.0f, 10.0f };
-	environment.camera.manipulator_rotate_roll_pitch_yaw(0, Pi / 2.0f, 0); //initial rotation value
+	environment.camera.manipulator_rotate_roll_pitch_yaw(0, camera_pitch, camera_yaw); //initial rotation value
 
 	// Number of clusters
 	N = 1000;
