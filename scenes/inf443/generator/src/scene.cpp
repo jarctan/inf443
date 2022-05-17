@@ -56,8 +56,232 @@ int find_pt(std::vector<vec3> l, vec3 el) {
 void scene_structure::initialize() {
     std::default_random_engine e(time(NULL));
 
-	// Number of clusters
-	N = 1000;
+	create_voronoi(2000);
+
+	create_ocean_border();
+
+	compute_heights();
+
+	compute_waterdists();
+
+	// Compute the elevation of the centers of the polygons
+	smooth_centers();
+
+	/// Laplacian smoothing
+	/*for (int i = 0; i < 5; i++) {
+		laplacian_smoothing();
+	}*/
+
+	add_snow_biotope();
+
+	// Create a visual frame representing the coordinate system
+	global_frame.initialize(mesh_primitive_frame(), "Frame");
+	environment.camera.axis = camera_spherical_coordinates_axis::z;
+	environment.camera.look_at({ 5.0f,5.0f,15.0f }, { 5,5,0 });
+
+	// Create a mesh for the centers
+	particle_sphere.initialize(mesh_primitive_sphere(0.05f));
+	particle_sphere.shading.color = { 1,0,0 };
+
+	create_terrain();
+
+	timer.scale = 0.5f;
+}
+
+/// Draws (and displays) a segment between a and b.
+void scene_structure::draw_segment(vec3 const& a, vec3 const& b) {
+	segment.update({ a, b });
+	draw(segment, environment);
+}
+
+// This function is constantly called at every frame
+void scene_structure::display() {
+	// Set the light to the current position of the camera
+	environment.light = environment.camera.position();
+
+	// conditional display of the global frame (set via the GUI)
+	if (gui.display_frame)
+		draw(global_frame, environment);
+
+	// Update the current time
+	timer.update();
+
+	// Draw the lines between the clusters, and the borders
+	draw(sea, environment);
+	draw(terrain, environment);
+}
+
+/// Displays the GUI elements.
+void scene_structure::display_gui() {
+	ImGui::Checkbox("Frame", &gui.display_frame);
+}
+
+/// Creates a terrain mesh based on the Voronoi diagram.
+void scene_structure::create_terrain() {
+	mesh sea_mesh = mesh_primitive_grid({-20,-20,-0.01f},{20,-20,-0.01f},{20,20,-0.01f},{-20,20,-0.01f});
+	// Initialize and sets the right color for the terrain
+	sea.initialize(sea_mesh, "sea");
+	sea.shading.color = { 0,0.412f,0.58f };
+	sea.shading.phong.specular = 0;
+
+    // Terrain geometry
+	mesh terrain_mesh;
+    for(int k = 0; k < N; k++) {
+		// The following convention is being used:
+		// the first point is the centers of the polygon,
+		// then the following points are its corners.
+		mesh polygon_mesh;
+		const int center_idx = 0;
+
+		vec3 color;
+		if (biotopes[k] == Biotope::Ocean)
+			color = vec3(0,0.412f,0.58f);
+		else if (biotopes[k] == Biotope::Lake)
+			color = vec3(0.2f,0.59f,0.885f);
+		else if (biotopes[k] == Biotope::Snow)
+			color = vec3(1.0f,1.0f,1.0f);
+		else
+			color = vec3(0.6f,0.85f,0.5f);
+
+		polygon_mesh.position.push_back(centers[k]);
+		polygon_mesh.color.push_back(color);
+		for(int& corner: mycorners[k]) {
+			polygon_mesh.position.push_back(corners[corner]);
+			polygon_mesh.color.push_back(color);
+		}
+
+		// Generate triangle organization
+		// The triangles are constructed as follows: a triangle is made up of
+		// the center of a polygon, and the vectices of an edge of this polygon
+		for(int i = 0; i < mycorners[k].size(); i++) {
+			int corner_1 = 1+(i%mycorners[k].size());
+			int corner_2 = 1+((i+1)%mycorners[k].size());
+        	uint3 triangle = {center_idx, corner_1, corner_2};
+        	polygon_mesh.connectivity.push_back(triangle);
+		}
+
+		// Apply defaults
+		polygon_mesh.fill_empty_field();
+		terrain_mesh.push_back(polygon_mesh);
+	}
+
+	// Initialize and sets the right color for the land
+	terrain.initialize(terrain_mesh, "Terrain");
+	terrain.shading.phong.specular = 0.0f; // non-specular land material
+}
+
+/// Computes the height, and find the connected component
+/// of the oceans at the same time.
+void scene_structure::compute_heights() {
+	/// Find the source of the shortest path algorithm.
+	int source = 0;
+	for (int i = 0; i < N_corners; i++) {
+		corners[i].z = INFINITY;
+		// If there is a ocean polygon amongst all the polygon
+		// this corners touches, sets the height to 0 
+		for (int& poly_idx: touches[i]) {
+			if (biotopes[poly_idx] == Biotope::Ocean) {
+				corners[i].z = 0;
+			}
+		}
+	}
+	// In case of, make sure that the source is at the sea level
+	corners[source].z = 0;
+
+	// Build the priority queue
+	std::priority_queue<std::pair<int,int>, std::vector<std::pair<int,int>>, std::function<bool(std::pair<int,int>, std::pair<int,int>)>> Q(CompareHeights);
+	for (int v = 0; v < N_corners; v++) {
+		Q.push(std::pair<int,int>(v, corners[v].z));
+	}
+	
+	while (!Q.empty()) {
+		int u = Q.top().first;
+		Q.pop();
+		for (auto& adjacent: adjacents[u]) {
+			int v = std::get<0>(adjacent);
+			int poly_1 = std::get<1>(adjacent);
+			int poly_2 = std::get<1>(adjacent);
+			float dist;
+			if (biotopes[poly_1] == Biotope::Ocean) {
+				if (biotopes[poly_2] == Biotope::Lake) biotopes[poly_2] = Biotope::Ocean;
+				dist = 0;
+			} else if (biotopes[poly_2] == Biotope::Ocean) {
+				if (biotopes[poly_1] == Biotope::Lake) biotopes[poly_1] = Biotope::Ocean;
+				dist = 0;
+			} else if (biotopes[poly_1] == Biotope::Lake || biotopes[poly_2] == Biotope::Lake) {
+				dist = 0;
+			} else {
+				vec2 corner_u = { corners[u].x, corners[u].y };
+				vec2 corner_v = { corners[v].x, corners[v].y };
+				dist = norm(corner_u - corner_v);
+			}
+
+			float alt = corners[u].z + dist;
+			if (alt < corners[v].z) {
+				corners[v].z = alt;
+				Q.push(std::pair<int,int>(v, corners[v].z));
+			}
+		}
+	}
+	std::cout << "Heights of corners computed";
+}
+
+/// Computes the smallest distance to a water source.
+void scene_structure::compute_waterdists() {
+	waterdists.resize(N_corners);
+	// Compute the source of the algorithm
+	// and initializes the distances
+	int source = 0;
+	for (int i = 0; i < N_corners; i++) {
+		waterdists[i] = INFINITY;
+		// If there is a ocean polygon amongst all the polygon
+		// this corners touches, sets the height to 0 
+		for (int& poly_idx: touches[i]) {
+			if (biotopes[poly_idx] == Biotope::Ocean || biotopes[poly_idx] == Biotope::Lake) {
+				waterdists[i] = 0;
+			}
+		}
+	}
+	// In case of, make sure that the source is at the sea level
+	waterdists[source] = 0;
+
+	// Build the priority queue
+	std::priority_queue<std::pair<int,int>, std::vector<std::pair<int,int>>, std::function<bool(std::pair<int,int>, std::pair<int,int>)>> Q(CompareHeights);
+	for (int v = 0; v < N_corners; v++) {
+		Q.push(std::pair<int,int>(v, waterdists[v]));
+	}
+	
+	while (!Q.empty()) {
+		int u = Q.top().first;
+		Q.pop();
+		for (auto& adjacent: adjacents[u]) {
+			int v = std::get<0>(adjacent);
+			int poly_1 = std::get<1>(adjacent);
+			int poly_2 = std::get<1>(adjacent);
+			float alt;
+			if (biotopes[poly_1] == Biotope::Ocean || biotopes[poly_1] == Biotope::Lake ||
+				biotopes[poly_2] == Biotope::Ocean || biotopes[poly_2] == Biotope::Lake) {
+				alt = 0;
+			} else {
+				vec2 corner_u = { corners[u].x, corners[u].y };
+				vec2 corner_v = { corners[v].x, corners[v].y };
+				alt = waterdists[u] + norm(corner_u - corner_v);
+			}
+
+			if (alt < waterdists[v]) {
+				waterdists[v] = alt;
+				Q.push(std::pair<int,int>(v, waterdists[v]));
+			}
+		}
+	}
+
+	std::cout << "Distance to water computed";
+}
+
+/// Creates a new Voronoi structure with `n` clusters
+/// and updates the class fields accordingly.
+void scene_structure::create_voronoi(int n) {
+	N = n;
 	centers.resize(N);
 	biotopes.resize(N, Biotope::Land);
 	neighbors.resize(N);
@@ -159,28 +383,21 @@ void scene_structure::initialize() {
 	}
 
 	N_corners = corners.size();
-	heights.resize(N_corners);
-	downslope.resize(N_corners);
 
-	std::cout << "End of preprocessing Voronoi diagrams";
+	// Always free up memory at the end
+    jcv_diagram_free( &diagram );
+}
 
-	// Create the ocean border
-	for(int i = 0; i < diagram.numsites; i++) {
-        const jcv_site* site = &sites[i];
-        const jcv_graphedge* edge = site->edges;
-		int idx = site->index;
-		
-		while (edge) {
-			vec3 p1 = {edge->pos[0].x, edge->pos[0].y, 0 };
-			vec3 p2 = {edge->pos[1].x, edge->pos[1].y, 0 };
-			if (p1.x <= 0.2f || p1.y <= 0.2f || p2.x <= 0.2f || p2.y <= 0.2f
-			  ||p1.x >= 9.8f || p1.y >= 9.8f || p2.x >= 9.8f || p2.y >= 9.8f) {
+/// Creates an ocean border around the island.
+void scene_structure::create_ocean_border() {
+	for(int idx = 0; idx < N; idx++) {
+		for (auto& corner_idx: mycorners[idx]) {
+			vec3& corner = corners[corner_idx];
+			if (corner.x <= 0.2f || corner.y <= 0.2f || corner.x >= 9.8f || corner.y  >= 9.8f) {
 				  biotopes[idx] = Biotope::Ocean;
 			}
-				
-            edge = edge->next;
 		}
-		//Old values:
+		// Old values:
 		// * threshold: 0.5f
 		// * noise_perlin: 6, 0.37f, 2.2f
 		// * noise < threshold
@@ -189,70 +406,11 @@ void scene_structure::initialize() {
 			biotopes[idx] = Biotope::Lake;
 		}
 	}
-	
-	// Compute the height, and extend oceans at the same time
-	// Find the source of the shortest path algorithm
-	int source = 0;
-	for (int i = 0; i < N_corners; i++) {
-		heights[i] = INFINITY;
-		// If there is a ocean polygon amongst all the polygon
-		// this corners touches, sets the height to 0 
-		for (int& poly_idx: touches[i]) {
-			if (biotopes[poly_idx] == Biotope::Ocean) {
-				heights[i] = 0;
-			}
-		}
-	}
-	// In case of, make sure that the source is at the sea level
-	heights[source] = 0;
+}
 
-	// Build the priority queue
-	// At first, no corner has downslope
-	std::priority_queue<std::pair<int,int>, std::vector<std::pair<int,int>>, std::function<bool(std::pair<int,int>, std::pair<int,int>)>> Q(CompareHeights);
-	for (int v = 0; v < N_corners; v++) {
-		Q.push(std::pair<int,int>(v, heights[v]));
-		downslope[v] = -1;
-	}
-	
-	while (!Q.empty()) {
-		int u = Q.top().first;
-		Q.pop();
-		for (auto& adjacent: adjacents[u]) {
-			int v = std::get<0>(adjacent);
-			int poly_1 = std::get<1>(adjacent);
-			int poly_2 = std::get<1>(adjacent);
-			float dist;
-			if (biotopes[poly_1] == Biotope::Ocean) {
-				if (biotopes[poly_2] == Biotope::Lake) biotopes[poly_2] = Biotope::Ocean;
-				dist = 0;
-			} else if (biotopes[poly_2] == Biotope::Ocean) {
-				if (biotopes[poly_1] == Biotope::Lake) biotopes[poly_1] = Biotope::Ocean;
-				dist = 0;
-			} else if (biotopes[poly_1] == Biotope::Lake || biotopes[poly_2] == Biotope::Lake) {
-				dist = 0;
-			} else {
-				dist = norm(corners[u] - corners[v]);
-			}
-
-			float alt = heights[u] + dist*(rand() * 3.0f / RAND_MAX);
-			if (alt < heights[v]) {
-				if (dist > 0) downslope[v] = u;
-				heights[v] = alt;
-				Q.push(std::pair<int,int>(v, heights[v]));
-			}
-		}
-	}
-
-	/// Corners heights have just been computed
-	for (int v = 0; v < N_corners; v++) {
-		corners[v].z = heights[v];
-	}
-
-	// We now compute the elevation of the centers
-	// of the polygons
+/// Places the center of the polygons at the mean of the elevation its corners.
+void scene_structure::smooth_centers() {
 	for (int v = 0; v < N; v++) {
-		// The elevation of the center is
-		// the mean of the elevation of its corners
 		float mean = 0.0f;
 		int n = 0;
 		for (int& corner_idx: mycorners[v]) {
@@ -261,113 +419,34 @@ void scene_structure::initialize() {
 		}
 		centers[v].z = mean/((float) n);
 	}
+}
 
+/// Applies Laplacian smoothing to both the centers and the corners of each polygon.
+void scene_structure::laplacian_smoothing() {
+	for (int v = 0; v < N_corners; v++) {
+		float mean = 0.0f;
+		int n = 0;
+		for (auto& adjacent: adjacents[v]) {
+			mean += corners[std::get<0>(adjacent)].z;
+			n++;
+		}
+		for (int& poly: touches[v]) {
+			mean += centers[poly].z;
+			n++;
+		}
+		corners[v].z = mean/((float) n);
+	}
+
+	smooth_centers();
+}
+
+/// Adds all the other biotopes.
+void scene_structure::add_biotopes() {
 	// We define snow biotopes based on elevation
     std::normal_distribution<double> distSnow(SNOW_HEIGHT,SNOW_STD); 
 	for (int idx = 0; idx < N; idx++) {
 		if (centers[idx].z > distSnow(e) && biotopes[idx] == Biotope::Land) {
 			biotopes[idx] = Biotope::Snow;
 		}
-	}
-
-	// Create a visual frame representing the coordinate system
-	global_frame.initialize(mesh_primitive_frame(), "Frame");
-	environment.camera.axis = camera_spherical_coordinates_axis::z;
-	environment.camera.look_at({ 5.0f,5.0f,15.0f }, { 5,5,0 });
-
-	// Create a mesh for the centers
-	particle_sphere.initialize(mesh_primitive_sphere(0.05f));
-	particle_sphere.shading.color = { 1,0,0 };
-
-	// Create the terrain
-	create_terrain();
-
-	// Always free up memory at the end
-    jcv_diagram_free( &diagram );
-
-	// Timer scale
-	timer.scale = 0.5f;
-}
-
-/// Draws (and displays) a segment between a and b.
-void scene_structure::draw_segment(vec3 const& a, vec3 const& b) {
-	segment.update({ a, b });
-	draw(segment, environment);
-}
-
-// This function is constantly called at every frame
-void scene_structure::display() {
-	// Set the light to the current position of the camera
-	environment.light = environment.camera.position();
-
-	// conditional display of the global frame (set via the GUI)
-	if (gui.display_frame)
-		draw(global_frame, environment);
-
-	// Update the current time
-	timer.update();
-
-	// Draw the lines between the clusters, and the borders
-	draw(sea, environment);
-	draw(terrain, environment);
-
-	if (gui.display_wireframe);
-}
-
-void scene_structure::display_gui() {
-	ImGui::Checkbox("Frame", &gui.display_frame);
-	ImGui::Checkbox("Wireframe", &gui.display_wireframe);
-}
-
-void scene_structure::create_terrain() {
-	mesh sea_mesh = mesh_primitive_grid({-20,-20,-0.01f},{20,-20,-0.01f},{20,20,-0.01f},{-20,20,-0.01f});
-	// Initialize and sets the right color for the terrain
-	sea.initialize(sea_mesh, "sea");
-	sea.shading.color = { 0,0.412f,0.58f };
-	sea.shading.phong.specular = 0;
-
-    // Terrain geometry
-	mesh terrain_mesh;
-    for(int k = 0; k < N; k++) {
-		// The following convention is being used:
-		// the first point is the centers of the polygon,
-		// then the following points are its corners.
-		mesh polygon_mesh;
-		const int center_idx = 0;
-
-		vec3 color;
-		if (biotopes[k] == Biotope::Ocean)
-			color = vec3(0,0.412f,0.58f);
-		else if (biotopes[k] == Biotope::Lake)
-			color = vec3(0.2f,0.59f,0.885f);
-		else if (biotopes[k] == Biotope::Snow)
-			color = vec3(1.0f,1.0f,1.0f);
-		else
-			color = vec3(0.6f,0.85f,0.5f);
-
-		polygon_mesh.position.push_back(centers[k]);
-		polygon_mesh.color.push_back(color);
-		for(int& corner: mycorners[k]) {
-			polygon_mesh.position.push_back(corners[corner]);
-			polygon_mesh.color.push_back(color);
-		}
-
-		// Generate triangle organization
-		// The triangles are constructed as follows: a triangle is made up of
-		// the center of a polygon, and the vectices of an edge of this polygon
-		for(int i = 0; i < mycorners[k].size(); i++) {
-			int corner_1 = 1+(i%mycorners[k].size());
-			int corner_2 = 1+((i+1)%mycorners[k].size());
-        	uint3 triangle = {center_idx, corner_1, corner_2};
-        	polygon_mesh.connectivity.push_back(triangle);
-		}
-
-		// Apply defaults
-		polygon_mesh.fill_empty_field();
-		terrain_mesh.push_back(polygon_mesh);
-	}
-
-	// Initialize and sets the right color for the land
-	terrain.initialize(terrain_mesh, "Terrain");
-	terrain.shading.phong.specular = 0.0f; // non-specular land material
+	}	
 }
