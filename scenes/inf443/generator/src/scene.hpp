@@ -21,6 +21,18 @@ enum class Biotope {
 	Ocean,
 	Lake,
 	Snow,
+	Tundra,
+	Bare,
+	Scorched,
+	Taiga,
+	Shrubland,
+	TempDesert,
+	TempRainForest,
+	TempDeciduousForest,
+	Grassland,
+	TropicalRainForest,
+	TropicalSeasonalForest,
+	SubtropicalDesert,
 };
 
 /// The structure of the custom scene.
@@ -61,6 +73,7 @@ public:
     std::vector<cgp::vec3> corners; // The corners
 	std::vector<std::vector<int>> touches; // The list of polygons a corner  touches
     std::vector<std::vector<std::tuple<int,int,int>>> adjacents; // The adjacents corners of a corner
+    std::default_random_engine randeng;
 
 	/// Timer used for the animation.
 	cgp::timer_basic timer;
@@ -92,8 +105,8 @@ private:
 	void smooth_centers();
 	/// Applies Laplacian smoothing to both the centers and the corners of each polygon.
 	void laplacian_smoothing();
-	/// Adds snow biotopes.
-	void add_snow_biotope();
+	/// Adds remaining biotopes.
+	void add_biotopes();
 };
 
 

@@ -54,9 +54,8 @@ int find_pt(std::vector<vec3> l, vec3 el) {
 /// This function is called only once at the beginning of the program
 /// and initializes the meshes, diagrams and other structures.
 void scene_structure::initialize() {
-    std::default_random_engine e(time(NULL));
-
-	create_voronoi(2000);
+	randeng = std::default_random_engine(time(NULL));
+	create_voronoi(4000);
 
 	create_ocean_border();
 
@@ -68,11 +67,11 @@ void scene_structure::initialize() {
 	smooth_centers();
 
 	/// Laplacian smoothing
-	/*for (int i = 0; i < 5; i++) {
+	for (int i = 0; i < 5; i++) {
 		laplacian_smoothing();
-	}*/
+	}
 
-	add_snow_biotope();
+	add_biotopes();
 
 	// Create a visual frame representing the coordinate system
 	global_frame.initialize(mesh_primitive_frame(), "Frame");
@@ -140,6 +139,30 @@ void scene_structure::create_terrain() {
 			color = vec3(0.2f,0.59f,0.885f);
 		else if (biotopes[k] == Biotope::Snow)
 			color = vec3(1.0f,1.0f,1.0f);
+		else if (biotopes[k] == Biotope::Tundra)
+			color = vec3(0.867f,0.867f,0.733f);
+		else if (biotopes[k] == Biotope::Bare)
+			color = vec3(0.733f,0.733f,0.733f);
+		else if (biotopes[k] == Biotope::Scorched)
+			color = vec3(0.6f,0.6f,0.6f);
+		else if (biotopes[k] == Biotope::Taiga)
+			color = vec3(0.8f,0.831f,0.733f);
+		else if (biotopes[k] == Biotope::Shrubland)
+			color = vec3(0.769f,0.8f,0.733f);
+		else if (biotopes[k] == Biotope::TempDesert)
+			color = vec3(0.894f,0.91f,0.792f);
+		else if (biotopes[k] == Biotope::TempRainForest)
+			color = vec3(0.643f,0.769f,0.659f);
+		else if (biotopes[k] == Biotope::TempDeciduousForest)
+			color = vec3(0.706f,0.788f,0.663f);
+		else if (biotopes[k] == Biotope::Grassland)
+			color = vec3(0.769f,0.831f,0.667f);
+		else if (biotopes[k] == Biotope::TropicalRainForest)
+			color = vec3(0.612f,0.733f,0.663f);
+		else if (biotopes[k] == Biotope::TropicalSeasonalForest)
+			color = vec3(0.663f,0.8f,0.643f);
+		else if (biotopes[k] == Biotope::SubtropicalDesert)
+			color = vec3(0.914f,0.867f,0.78f);
 		else
 			color = vec3(0.6f,0.85f,0.5f);
 
@@ -228,18 +251,15 @@ void scene_structure::compute_heights() {
 
 /// Computes the smallest distance to a water source.
 void scene_structure::compute_waterdists() {
-	waterdists.resize(N_corners);
+	waterdists.resize(N);
 	// Compute the source of the algorithm
 	// and initializes the distances
 	int source = 0;
-	for (int i = 0; i < N_corners; i++) {
-		waterdists[i] = INFINITY;
-		// If there is a ocean polygon amongst all the polygon
-		// this corners touches, sets the height to 0 
-		for (int& poly_idx: touches[i]) {
-			if (biotopes[poly_idx] == Biotope::Ocean || biotopes[poly_idx] == Biotope::Lake) {
-				waterdists[i] = 0;
-			}
+	for (int idx = 0; idx < N; idx++) {
+		if (biotopes[idx] == Biotope::Ocean || biotopes[idx] == Biotope::Lake) {
+			waterdists[idx] = 0;
+		} else {
+			waterdists[idx] = INFINITY;
 		}
 	}
 	// In case of, make sure that the source is at the sea level
@@ -247,25 +267,22 @@ void scene_structure::compute_waterdists() {
 
 	// Build the priority queue
 	std::priority_queue<std::pair<int,int>, std::vector<std::pair<int,int>>, std::function<bool(std::pair<int,int>, std::pair<int,int>)>> Q(CompareHeights);
-	for (int v = 0; v < N_corners; v++) {
+	for (int v = 0; v < N; v++) {
 		Q.push(std::pair<int,int>(v, waterdists[v]));
 	}
 	
 	while (!Q.empty()) {
 		int u = Q.top().first;
 		Q.pop();
-		for (auto& adjacent: adjacents[u]) {
-			int v = std::get<0>(adjacent);
-			int poly_1 = std::get<1>(adjacent);
-			int poly_2 = std::get<1>(adjacent);
+		for (auto& neighbor: neighbors[u]) {
+			int v = std::get<0>(neighbor);
 			float alt;
-			if (biotopes[poly_1] == Biotope::Ocean || biotopes[poly_1] == Biotope::Lake ||
-				biotopes[poly_2] == Biotope::Ocean || biotopes[poly_2] == Biotope::Lake) {
+			if (biotopes[u] == Biotope::Ocean || biotopes[u] == Biotope::Lake) {
 				alt = 0;
 			} else {
-				vec2 corner_u = { corners[u].x, corners[u].y };
-				vec2 corner_v = { corners[v].x, corners[v].y };
-				alt = waterdists[u] + norm(corner_u - corner_v);
+				vec2 poly_u = { centers[u].x, centers[u].y };
+				vec2 poly_v = { centers[v].x, centers[v].y };
+				alt = waterdists[u] + norm(poly_u - poly_v);
 			}
 
 			if (alt < waterdists[v]) {
@@ -440,13 +457,53 @@ void scene_structure::laplacian_smoothing() {
 	smooth_centers();
 }
 
-/// Adds all the other biotopes.
+/// Adds remaining biotopes.
 void scene_structure::add_biotopes() {
+	std::vector<float> orderedWaterdists = waterdists;
+	sort(orderedWaterdists.begin(), orderedWaterdists.end());
+
+	std::vector<float> orderedHeights = {};
+	orderedHeights.resize(N);
+	for (int i = 0; i < N; i++)
+        orderedHeights[i] = corners[i].z;
+	sort(orderedHeights.begin(), orderedHeights.end());
+
+	// Find seperators between moisture and elevation zones
+	float el2 = orderedHeights[N/4];
+	float el3 = orderedHeights[N/2];
+	float el4 = orderedHeights[3*N/4];
+	float mois1 = orderedWaterdists[N/6];
+	float mois2 = orderedWaterdists[2*N/6];
+	float mois3 = orderedWaterdists[N/2];
+	float mois4 = orderedWaterdists[2*N/3];
+	float mois5 = orderedWaterdists[5*N/6];
+	
 	// We define snow biotopes based on elevation
-    std::normal_distribution<double> distSnow(SNOW_HEIGHT,SNOW_STD); 
+    std::normal_distribution<double> distEl4(el4,SNOW_STD); 
+    std::normal_distribution<double> distEl3(el3,SNOW_STD);
+    std::normal_distribution<double> distEl2(el2,SNOW_STD);
 	for (int idx = 0; idx < N; idx++) {
-		if (centers[idx].z > distSnow(e) && biotopes[idx] == Biotope::Land) {
-			biotopes[idx] = Biotope::Snow;
+		if (biotopes[idx] != Biotope::Land)
+			continue;
+		if (centers[idx].z >= distEl4(randeng)) {
+			if (waterdists[idx] <= mois3) biotopes[idx] = Biotope::Snow;
+			else if (waterdists[idx] <= mois4) biotopes[idx] = Biotope::Tundra;
+			else if (waterdists[idx] <= mois5) biotopes[idx] = Biotope::Bare;
+			else biotopes[idx] = Biotope::Scorched;
+		} else if (centers[idx].z >= distEl3(randeng)) {
+			if (waterdists[idx] <= mois2) biotopes[idx] = Biotope::Taiga;
+			else if (waterdists[idx] <= mois4) biotopes[idx] = Biotope::Shrubland;
+			else biotopes[idx] = Biotope::TempDesert;
+		} else if (centers[idx].z >= distEl2(randeng)) {
+			if (waterdists[idx] <= mois1) biotopes[idx] = Biotope::TempRainForest;
+			else if (waterdists[idx] <= mois3) biotopes[idx] = Biotope::TempDeciduousForest;
+			else if (waterdists[idx] <= mois5) biotopes[idx] = Biotope::Grassland;
+			else biotopes[idx] = Biotope::TempDesert;
+		} else {
+			if (waterdists[idx] <= mois2) biotopes[idx] = Biotope::TropicalRainForest;
+			else if (waterdists[idx] <= mois4) biotopes[idx] = Biotope::TropicalSeasonalForest;
+			else if (waterdists[idx] <= mois5) biotopes[idx] = Biotope::Grassland;
+			else biotopes[idx] = Biotope::SubtropicalDesert;
 		}
 	}	
 }
