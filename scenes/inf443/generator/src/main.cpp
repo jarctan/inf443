@@ -28,7 +28,7 @@ int main(int, char* argv[]) {
 	GLFWwindow* window = standard_window_initialization();
 
 	//Makes the mouse move more smoothly. Implement a button to leave scene before decommenting
-	//glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	// Custom scene initialization
 	std::cout << "Initialize data of the scene ..." << std::endl;

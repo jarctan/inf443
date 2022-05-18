@@ -59,6 +59,7 @@ struct scene_structure {
 	float initial_camera_yaw = 0;
 	float camera_pitch = 0;
 	float camera_yaw = 0;
+	bool cameraCanMove = true;
 	void handleKeyPress(GLFWwindow* window, int key, int action);
 	void handleMouseMove(GLFWwindow* window);
 };

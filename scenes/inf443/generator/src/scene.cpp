@@ -32,42 +32,79 @@ void relax_points(const jcv_diagram* diagram, jcv_point* points) {
 void scene_structure::handleKeyPress(GLFWwindow* window, int key, int action) {
 
 	inputs_keyboard_parameters const& keyboard = inputs.keyboard;
-	camera_head& camera = environment.camera;
-
-	// The camera moves forward all the time
-	//   We consider in this example a constant velocity, so the displacement is: velocity * dt * front-camera-vector
-	float const dt = timer.update();
-	vec3 displacement;
-
-	if (key == GLFW_KEY_W && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
-		displacement = speed * dt * camera.front();
+	
+	//block handling activation and deactivation of camera movement
+	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+		cameraCanMove = !cameraCanMove;
+		if (cameraCanMove) {
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+		}
+		else {
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+		}
 	}
 
-	std::cout << camera.position() << "\n";
+	//block handling camera movement
+	if (cameraCanMove) {
+		camera_head& camera = environment.camera;
 
-	camera.position_camera += displacement;
+		float const dt = timer.update();
+		vec3 displacement;
+
+		if (key == GLFW_KEY_W && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+			vec3 frontDirection = vec3(camera.front().x, camera.front().y, 0);
+			frontDirection = frontDirection / norm(frontDirection);
+			displacement = speed * dt * frontDirection;
+		}
+		else if (key == GLFW_KEY_A && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+			vec3 leftDirection = vec3(-camera.front().y, camera.front().x, 0);
+			leftDirection = leftDirection / norm(leftDirection);
+			displacement = speed * dt * leftDirection;
+		}
+		else if (key == GLFW_KEY_D && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+			vec3 rightDirection = vec3(camera.front().y, -camera.front().x, 0);
+			rightDirection = rightDirection / norm(rightDirection);
+			displacement = speed * dt * rightDirection;
+		}
+		else if (key == GLFW_KEY_S && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+			vec3 backDirection = vec3(-camera.front().x, -camera.front().y, 0);
+			backDirection = backDirection / norm(backDirection);
+			displacement = speed * dt * backDirection;
+		}
+		else if (key == GLFW_KEY_SPACE && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+			displacement = speed * dt * vec3(0, 0, 1);
+		}
+		else if (key == GLFW_KEY_LEFT_SHIFT && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+			displacement = speed * dt * vec3(0, 0, -1);
+		}
+
+		//std::cout << camera.position() << "\n";
+		camera.position_camera += displacement;
+	}
 }
 
 void scene_structure::handleMouseMove(GLFWwindow* window) {
-	int screenWidth = 0, screenHeight = 0;
-	glfwGetWindowSize(window, &screenWidth, &screenHeight);
-	double xpos, ypos;
-	glfwGetCursorPos(window, &xpos, &ypos);
-	glfwSetCursorPos(window, screenWidth / 2.0f, screenHeight / 2.0f);
-	camera_head& camera = environment.camera;
-	float const dt = timer.update();
+	if (cameraCanMove) {
+		int screenWidth = 0, screenHeight = 0;
+		glfwGetWindowSize(window, &screenWidth, &screenHeight);
+		double xpos, ypos;
+		glfwGetCursorPos(window, &xpos, &ypos);
+		glfwSetCursorPos(window, screenWidth / 2.0f, screenHeight / 2.0f);
+		camera_head& camera = environment.camera;
+		float const dt = timer.update();
 
-	rotation_transform initialOrientation = rotation_transform::from_axis_angle(vec3(1, 0, 0), initial_camera_pitch);
+		rotation_transform initialOrientation = rotation_transform::from_axis_angle(vec3(1, 0, 0), initial_camera_pitch);
 
-	camera_yaw += (screenWidth / 2.0f - xpos) * dt / 50.0f;
-	camera_pitch += (screenHeight / 2.0f - ypos) * dt / 50.0f;
+		camera_yaw += (screenWidth / 2.0f - xpos) * dt / 50.0f;
+		camera_pitch += (screenHeight / 2.0f - ypos) * dt / 50.0f;
 
-	//std::cout << "yaw = " << camera_yaw << " pitch = " << camera_pitch << "\n";
+		//std::cout << "yaw = " << camera_yaw << " pitch = " << camera_pitch << "\n";
 
-	rotation_transform r_pitch = rotation_transform::from_axis_angle(vec3(1, 0, 0), camera_pitch);
-	rotation_transform r_yaw = rotation_transform::from_axis_angle(vec3( 0,1,0 ), camera_yaw);
-	
-	camera.orientation_camera = initialOrientation * r_yaw * r_pitch;
+		rotation_transform r_pitch = rotation_transform::from_axis_angle(vec3(1, 0, 0), camera_pitch);
+		rotation_transform r_yaw = rotation_transform::from_axis_angle(vec3(0, 1, 0), camera_yaw);
+
+		camera.orientation_camera = initialOrientation * r_yaw * r_pitch;
+	}
 }
 
 /// This function is called only once at the beginning of the program
