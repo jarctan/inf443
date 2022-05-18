@@ -95,9 +95,11 @@ public:
 	float initial_camera_yaw = 0;
 	float camera_pitch = 0;
 	float camera_yaw = 0;
+	float mouseSpeed = 1;
 	bool cameraCanMove = true;
 	void handleKeyPress(GLFWwindow* window, int key, int action);
 	void handleMouseMove(GLFWwindow* window);
+
 private:
 	/// Compares the heights of the two points. Used exclusively for Dijkstra.
 	static bool CompareHeights(const std::pair<int,int> &a, const std::pair<int,int> &b);

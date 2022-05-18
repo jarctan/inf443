@@ -79,7 +79,7 @@ void scene_structure::handleKeyPress(GLFWwindow* window, int key, int action) {
 		else if (key == GLFW_KEY_SPACE && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
 			displacement = speed * dt * vec3(0, 0, 1);
 		}
-		else if (key == GLFW_KEY_LEFT_SHIFT && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+		else if (key == GLFW_KEY_ENTER && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
 			displacement = speed * dt * vec3(0, 0, -1);
 		}
 
@@ -100,8 +100,8 @@ void scene_structure::handleMouseMove(GLFWwindow* window) {
 
 		rotation_transform initialOrientation = rotation_transform::from_axis_angle(vec3(1, 0, 0), initial_camera_pitch);
 
-		camera_yaw += (screenWidth / 2.0f - xpos) * dt / 50.0f;
-		camera_pitch += (screenHeight / 2.0f - ypos) * dt / 50.0f;
+		camera_yaw += (screenWidth / 2.0f - xpos) * dt * mouseSpeed;
+		camera_pitch += (screenHeight / 2.0f - ypos) * dt * mouseSpeed;
 
 		//std::cout << "yaw = " << camera_yaw << " pitch = " << camera_pitch << "\n";
 
@@ -135,7 +135,7 @@ void scene_structure::initialize() {
 	// Set the behavior of the camera and its initial position
 	randeng = std::default_random_engine(time(NULL));
 	
-	create_voronoi(4000);
+	create_voronoi(1000);
 
 	create_ocean_border();
 
@@ -147,9 +147,7 @@ void scene_structure::initialize() {
 	smooth_centers();
 
 	/// Laplacian smoothing
-	for (int i = 0; i < 5; i++) {
-		laplacian_smoothing();
-	}
+	// for (int i = 0; i < 5; i++) {laplacian_smoothing();}
 
 	add_biotopes();
 
