@@ -23,6 +23,9 @@ int main(int, char* argv[]) {
 	// ************************ //
 	//     INITIALISATION
 	// ************************ //
+
+  	// Initialize random seed
+  	srand (time(NULL));
 	
 	// Standard Initialization with dimension in pixels
 	GLFWwindow* window = standard_window_initialization();
