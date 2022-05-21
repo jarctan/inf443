@@ -1,96 +1,64 @@
 #include "scene.hpp"
-#define JC_VORONOI_IMPLEMENTATION
-#include "jc_voronoi.h"
-#define JC_VORONOI_CLIP_IMPLEMENTATION
-#include "jc_voronoi_clip.h"
 
 const float SNOW_HEIGHT = 0.8f;
 const float SNOW_STD = 0.2f;
 
 using namespace cgp;
-
-/// Place the points at the centers (centroid) of their respective clusters
-/// in the Voronoi diagram.
-void relax_points(const jcv_diagram* diagram, jcv_point* points) {
-    const jcv_site* sites = jcv_diagram_get_sites(diagram);
-    for( int i = 0; i < diagram->numsites; ++i )
-    {
-        const jcv_site* site = &sites[i];
-        jcv_point sum = {0, 0};
-        int count = 0;
-
-        const jcv_graphedge* edge = site->edges;
-
-        while( edge )
-        {
-            sum.x += edge->pos[0].x;
-            sum.y += edge->pos[0].y;
-            ++count;
-            edge = edge->next;
-        }
-
-        points[site->index].x = sum.x / count;
-        points[site->index].y = sum.y / count;
-    }
-}
-
-/// This function compares the heights of two pairs of (_,height)
-/// and returns the true if the first one is higher than the second one.
-/// This is only used to create the priority queue.
-bool scene_structure::CompareHeights(const std::pair<int,int> &a, const std::pair<int,int> &b) {
-    return a.second > b.second;
-}
-
-/// Find a point in an array, and return the index of this point.
-int find_pt(std::vector<vec3> l, vec3 el) {
-	for(int i = 0; i < l.size(); i++) {
-		if (norm(el - l[i]) <= 0.0001f) {
-			return i;
-		}
-	}
-	return -1;
-}
+using namespace std::chrono;
 
 /// This function is called only once at the beginning of the program
 /// and initializes the meshes, diagrams and other structures.
 void scene_structure::initialize() {
 	randeng = std::default_random_engine(time(NULL));
-	create_voronoi(4000);
 
+	auto start = high_resolution_clock::now();
+	create_voronoi(6000);
+	auto stop = high_resolution_clock::now();
+	auto duration = duration_cast<milliseconds>(stop - start);
+	std::cout << "Voronoi diagram in " << duration.count() << "ms [OK]" << std::endl;
+
+	start = high_resolution_clock::now();
 	create_ocean_border();
+	stop = high_resolution_clock::now();
+	duration = duration_cast<milliseconds>(stop - start);
+	std::cout << "Ocean border in " << duration.count() << "ms [OK]" << std::endl;
 
+	start = high_resolution_clock::now();
 	compute_heights();
+	stop = high_resolution_clock::now();
+	duration = duration_cast<milliseconds>(stop - start);
+	std::cout << "Compute height in " << duration.count() << "ms [OK]" << std::endl;
 
+	start = high_resolution_clock::now();
 	compute_waterdists();
+	stop = high_resolution_clock::now();
+	duration = duration_cast<milliseconds>(stop - start);
+	std::cout << "Water distance in " << duration.count() << "ms [OK]" << std::endl;
 
 	// Compute the elevation of the centers of the polygons
+	start = high_resolution_clock::now();
 	smooth_centers();
+	stop = high_resolution_clock::now();
+	duration = duration_cast<milliseconds>(stop - start);
+	std::cout << "Smooth centers in " << duration.count() << "ms [OK]" << std::endl;
 
-	/// Laplacian smoothing
-	for (int i = 0; i < 5; i++) {
-		laplacian_smoothing();
-	}
-
+	start = high_resolution_clock::now();
 	add_biotopes();
+	stop = high_resolution_clock::now();
+	duration = duration_cast<milliseconds>(stop - start);
+	std::cout << "Biotopes in " << duration.count() << "ms [OK]" << std::endl;
 
 	// Create a visual frame representing the coordinate system
 	global_frame.initialize(mesh_primitive_frame(), "Frame");
 	environment.camera.axis = camera_spherical_coordinates_axis::z;
-	environment.camera.look_at({ 5.0f,5.0f,15.0f }, { 5,5,0 });
+	environment.camera.look_at({ 5.0f,5.0f,15.0f }, { 5,5,0 });;
 
-	// Create a mesh for the centers
-	particle_sphere.initialize(mesh_primitive_sphere(0.05f));
-	particle_sphere.shading.color = { 1,0,0 };
-
+	start = high_resolution_clock::now();
 	create_terrain();
+	stop = high_resolution_clock::now();
+	std::cout << "Terrain in " << duration.count() << "ms [OK]" << std::endl;
 
 	timer.scale = 0.5f;
-}
-
-/// Draws (and displays) a segment between a and b.
-void scene_structure::draw_segment(vec3 const& a, vec3 const& b) {
-	segment.update({ a, b });
-	draw(segment, environment);
 }
 
 // This function is constantly called at every frame
@@ -125,46 +93,46 @@ void scene_structure::create_terrain() {
 
     // Terrain geometry
 	mesh terrain_mesh;
-    for(int k = 0; k < N; k++) {
+    for (int k = 0; k < N; k++) {
 		// The following convention is being used:
 		// the first point is the centers of the polygon,
 		// then the following points are its corners.
 		mesh polygon_mesh;
 		const int center_idx = 0;
 
-		vec3 color;
+		vec4 color;
 		if (biotopes[k] == Biotope::Ocean)
-			color = vec3(0,0.412f,0.58f);
+			color = vec4(0,0.412f,0.58f,0.0f);
 		else if (biotopes[k] == Biotope::Lake)
-			color = vec3(0.2f,0.59f,0.885f);
+			color = vec4(0.2f,0.59f,0.885f,1.0f);
 		else if (biotopes[k] == Biotope::Snow)
-			color = vec3(1.0f,1.0f,1.0f);
+			color = vec4(1.0f,1.0f,1.0f,1.0f);
 		else if (biotopes[k] == Biotope::Tundra)
-			color = vec3(0.867f,0.867f,0.733f);
+			color = vec4(0.867f,0.867f,0.733f,1.0f);
 		else if (biotopes[k] == Biotope::Bare)
-			color = vec3(0.733f,0.733f,0.733f);
+			color = vec4(0.733f,0.733f,0.733f,1.0f);
 		else if (biotopes[k] == Biotope::Scorched)
-			color = vec3(0.6f,0.6f,0.6f);
+			color = vec4(0.6f,0.6f,0.6f,1.0f);
 		else if (biotopes[k] == Biotope::Taiga)
-			color = vec3(0.8f,0.831f,0.733f);
+			color = vec4(0.8f,0.831f,0.733f,1.0f);
 		else if (biotopes[k] == Biotope::Shrubland)
-			color = vec3(0.769f,0.8f,0.733f);
+			color = vec4(0.769f,0.8f,0.733f,1.0f);
 		else if (biotopes[k] == Biotope::TempDesert)
-			color = vec3(0.894f,0.91f,0.792f);
+			color = vec4(0.894f,0.91f,0.792f,1.0f);
 		else if (biotopes[k] == Biotope::TempRainForest)
-			color = vec3(0.643f,0.769f,0.659f);
+			color = vec4(0.643f,0.769f,0.659f,1.0f);
 		else if (biotopes[k] == Biotope::TempDeciduousForest)
-			color = vec3(0.706f,0.788f,0.663f);
+			color = vec4(0.706f,0.788f,0.663f,1.0f);
 		else if (biotopes[k] == Biotope::Grassland)
-			color = vec3(0.769f,0.831f,0.667f);
+			color = vec4(0.769f,0.831f,0.667f,1.0f);
 		else if (biotopes[k] == Biotope::TropicalRainForest)
-			color = vec3(0.612f,0.733f,0.663f);
+			color = vec4(0.612f,0.733f,0.663f,1.0f);
 		else if (biotopes[k] == Biotope::TropicalSeasonalForest)
-			color = vec3(0.663f,0.8f,0.643f);
+			color = vec4(0.663f,0.8f,0.643f,1.0f);
 		else if (biotopes[k] == Biotope::SubtropicalDesert)
-			color = vec3(0.914f,0.867f,0.78f);
+			color = vec4(0.914f,0.867f,0.78f,1.0f);
 		else
-			color = vec3(0.6f,0.85f,0.5f);
+			color = vec4(0.6f,0.85f,0.5f,0.0f);
 
 		polygon_mesh.position.push_back(centers[k]);
 		polygon_mesh.color.push_back(color);
@@ -175,7 +143,7 @@ void scene_structure::create_terrain() {
 
 		// Generate triangle organization
 		// The triangles are constructed as follows: a triangle is made up of
-		// the center of a polygon, and the vectices of an edge of this polygon
+		// the center of a polygon, and the vertices of an edge of this polygon
 		for(int i = 0; i < mycorners[k].size(); i++) {
 			int corner_1 = 1+(i%mycorners[k].size());
 			int corner_2 = 1+((i+1)%mycorners[k].size());
@@ -196,8 +164,9 @@ void scene_structure::create_terrain() {
 /// Computes the height, and find the connected component
 /// of the oceans at the same time.
 void scene_structure::compute_heights() {
-	/// Find the source of the shortest path algorithm.
-	int source = 0;
+	/// Initializes the shortest path algorithm
+	/// assigning all corners INFINITY, except
+	/// for the ocean polygons
 	for (int i = 0; i < N_corners; i++) {
 		corners[i].z = INFINITY;
 		// If there is a ocean polygon amongst all the polygon
@@ -208,11 +177,11 @@ void scene_structure::compute_heights() {
 			}
 		}
 	}
-	// In case of, make sure that the source is at the sea level
-	corners[source].z = 0;
 
 	// Build the priority queue
-	std::priority_queue<std::pair<int,int>, std::vector<std::pair<int,int>>, std::function<bool(std::pair<int,int>, std::pair<int,int>)>> Q(CompareHeights);
+	std::priority_queue<std::pair<int,int>, std::vector<std::pair<int,int>>, std::function<bool(std::pair<int,int>, std::pair<int,int>)>> Q([] (const std::pair<int,int> &a, const std::pair<int,int> &b) {
+   		return a.second > b.second;
+	});
 	for (int v = 0; v < N_corners; v++) {
 		Q.push(std::pair<int,int>(v, corners[v].z));
 	}
@@ -223,7 +192,7 @@ void scene_structure::compute_heights() {
 		for (auto& adjacent: adjacents[u]) {
 			int v = std::get<0>(adjacent);
 			int poly_1 = std::get<1>(adjacent);
-			int poly_2 = std::get<1>(adjacent);
+			int poly_2 = std::get<2>(adjacent);
 			float dist;
 			if (biotopes[poly_1] == Biotope::Ocean) {
 				if (biotopes[poly_2] == Biotope::Lake) biotopes[poly_2] = Biotope::Ocean;
@@ -246,7 +215,6 @@ void scene_structure::compute_heights() {
 			}
 		}
 	}
-	std::cout << "Heights of corners computed";
 }
 
 /// Computes the smallest distance to a water source.
@@ -254,7 +222,6 @@ void scene_structure::compute_waterdists() {
 	waterdists.resize(N);
 	// Compute the source of the algorithm
 	// and initializes the distances
-	int source = 0;
 	for (int idx = 0; idx < N; idx++) {
 		if (biotopes[idx] == Biotope::Ocean || biotopes[idx] == Biotope::Lake) {
 			waterdists[idx] = 0;
@@ -262,11 +229,11 @@ void scene_structure::compute_waterdists() {
 			waterdists[idx] = INFINITY;
 		}
 	}
-	// In case of, make sure that the source is at the sea level
-	waterdists[source] = 0;
 
 	// Build the priority queue
-	std::priority_queue<std::pair<int,int>, std::vector<std::pair<int,int>>, std::function<bool(std::pair<int,int>, std::pair<int,int>)>> Q(CompareHeights);
+	std::priority_queue<std::pair<int,int>, std::vector<std::pair<int,int>>, std::function<bool(std::pair<int,int>, std::pair<int,int>)>> Q([] (const std::pair<int,int> &a, const std::pair<int,int> &b) {
+   		return a.second > b.second;
+	});
 	for (int v = 0; v < N; v++) {
 		Q.push(std::pair<int,int>(v, waterdists[v]));
 	}
@@ -291,118 +258,164 @@ void scene_structure::compute_waterdists() {
 			}
 		}
 	}
-
-	std::cout << "Distance to water computed";
 }
 
 /// Creates a new Voronoi structure with `n` clusters
 /// and updates the class fields accordingly.
 void scene_structure::create_voronoi(int n) {
-	N = n;
+	VoronoiDiagramGenerator vdg = VoronoiDiagramGenerator();
+	std::vector<Point2>* sites = new std::vector<Point2>();
+	BoundingBox bbox = BoundingBox(0, 10, 10, 0);
+
+	// Create points, with possible duplicates
+	// Use a temporary structure to hold data, we will remove duplicates afterwards
+	// Heavily inspired by https://github.com/mdally/Voronoi/blob/master/examples/OpenGL_Example.cpp
+	// in particular `genRandomSites()`
+	std::vector<Point2> tmpSites;
+
+	tmpSites.reserve(n);
+	sites->reserve(n);
+
+	Point2 s;
+
+	for (unsigned int i = 0; i < n; ++i) {
+		s.x = (rand() / (double)RAND_MAX)*10.0d;
+		s.y = (rand() / (double)RAND_MAX)*10.0d;
+		tmpSites.push_back(s);
+	}
+
+	// Remove any duplicates that exist
+	// To do this, sort the temporary sites
+	// and add them if they are not a duplicate.
+	std::sort(tmpSites.begin(), tmpSites.end(), [] (const Point2& s1, const Point2& s2) {
+		// Use lexicographic order to sort points
+		if (s1.x < s2.x)
+			return true;
+		if (s1.x == s2.x && s1.y < s2.y)
+			return true;
+
+		return false;
+	});
+	sites->push_back(tmpSites[0]);
+	for (Point2& s : tmpSites) {
+		if (s != sites->back()) sites->push_back(s);
+	}
+
+	// We now know the number of Voronoi diagrams
+	N = sites->size();
 	centers.resize(N);
 	biotopes.resize(N, Biotope::Land);
 	neighbors.resize(N);
 	mycorners.resize(N);
 
-	jcv_diagram diagram;
-    memset(&diagram, 0, sizeof(jcv_diagram));
-	jcv_point* points = (jcv_point*) malloc(N*sizeof(jcv_point));
-	for (int i = 0; i < N; i++) {
-		jcv_point pt;
-		pt.x = ((float) rand()) * 10.0f / RAND_MAX;
-		pt.y = (float) rand() * 10.0f / RAND_MAX;
-		points[i] = pt;
-	}
-
-    // Create a clipper, which is a rectangle
-	jcv_clipping_polygon polygon;
-    polygon.num_points = 4;
-    polygon.points = (jcv_point*)malloc(sizeof(jcv_point)*(size_t)polygon.num_points);
-
-    polygon.points[0].x = 0;
-    polygon.points[0].y = 0;
-    polygon.points[1].x = 10;
-    polygon.points[1].y = 0;
-    polygon.points[2].x = 10;
-    polygon.points[2].y = 10;
-    polygon.points[3].x = 0;
-    polygon.points[3].y = 10;
-
-    jcv_clipper polygonclipper;
-    polygonclipper.test_fn = jcv_clip_polygon_test_point;
-    polygonclipper.clip_fn = jcv_clip_polygon_clip_edge;
-    polygonclipper.fill_fn = jcv_clip_polygon_fill_gaps;
-    polygonclipper.ctx = &polygon;
-
-	// Run n iterations of Voronoi (find Voronoi clusters, then place points at centroids, repeat)
-	for (int i = 0; i < 1; i++) {
-		jcv_diagram_generate(N, points, 0, &polygonclipper, &diagram );
-		relax_points(&diagram, points);
-	}
-
-	segments_drawable::default_shader = curve_drawable::default_shader;
-	segment.initialize({ {0,0,0},{1,0,0} });
+	Diagram* diagram = vdg.compute(*sites, bbox);
 
 	// Store the centers
-	for(int i = 0; i < N; i++) {
-		centers[i] = {points[i].x, points[i].y, 0};
+	int idx = 0;
+	for (Cell* c : diagram->cells) {
+		Point2& p = c->site.p;
+		centers[idx] = {p.x, p.y, 0};
+		idx++;
 	}
 
-	// Store the corners and neighbors
-    const jcv_site* sites = jcv_diagram_get_sites(&diagram);
-    for(int i = 0; i < diagram.numsites; i++) {
-        const jcv_site* site = &sites[i];
-        const jcv_graphedge* edge = site->edges;
-		int idx = site->index;
-		std::vector<std::tuple<int,int,int>> l;
+	// Assign a number to each polygon and each vertex, and store it in
+	// a map. These maps will help to find the number of each cell or vertex
+	// in no time.
+	std::map<Cell*, int> cells_ad;
+	for (Cell* cell: diagram->cells) {
+		int i = cells_ad.size();
+		cells_ad.insert(std::pair<Cell*,int>(cell, i));
+	}
 
-        while( edge ) {
-			vec3 v = {edge->pos[0].x, edge->pos[0].y, 0.0};
-
-			// For each point in the edge, retrieve its index in the corners list.
-			// If it does not already exist, add it to the list (the index will then
-			// be the size of the list).
-			int pt1 = find_pt(corners, v);
-			if (pt1 == -1) {
-				pt1 = corners.size();
-				corners.push_back(v);
-				touches.push_back({});
-				adjacents.push_back({});
-			}
-			// If there's some logic here, the list of corners is exactly
-			// the list of the first vertex of each edge in the polygon
-			mycorners[idx].push_back(pt1);
-
-			v = {edge->pos[1].x, edge->pos[1].y, 0.0};
-			int pt2 = find_pt(corners, v);
-			if (pt2 == -1) {
-				pt2 = corners.size();
-				corners.push_back(v);
-				touches.push_back({});
-				adjacents.push_back({});
-			}
-
-			int idx_neigh = edge->neighbor ? edge->neighbor->index : -1;
-			adjacents[pt1].push_back(std::make_tuple(pt2, idx, idx_neigh));
-			adjacents[pt2].push_back(std::make_tuple(pt1, idx, idx_neigh));
-
-			touches[pt1].push_back(idx);
-			touches[pt2].push_back(idx);
-
-			// Add the edge in the form of (neighbor, idx of 1st corner, idx of 2nd corner)
-			if (edge->neighbor)
-				l.push_back(std::make_tuple(edge->neighbor->index, pt1, pt2));
-				
-            edge = edge->next;
-		}
-
-		neighbors[idx] = l;
+	std::map<Point2*, int> vertices_ad;
+	for (Point2* pt: diagram->vertices) {
+		int i = corners.size();
+		vec3 v = {pt->x, pt->y, 0.0f};
+		corners.push_back(v);
+		touches.push_back({});
+		adjacents.push_back({});
+		vertices_ad.insert(std::pair<Point2*,int>(pt, i));
 	}
 
 	N_corners = corners.size();
 
+	// Store the corners and neighbors
+	idx = 0;
+	for (Cell* c: diagram->cells) {
+		std::vector<std::tuple<int,int,int>> l;
+
+        for (HalfEdge* halfedge: c->halfEdges) {
+			Point2* vertA = halfedge->startPoint();
+			Point2* vertB = halfedge->endPoint();
+			vec3 v = {vertA->x, vertA->y, 0.0f};
+
+			// For each point in the edge, retrieve its index in the corners list.
+			// This assert and the following ones make sure that every vertex and
+			// polygon must have been registered before in the first pass of the algo.
+			auto found1 = vertices_ad.find(vertA);
+			assert(found1 != vertices_ad.end());
+			int pt1 = found1->second;
+			// If there's some logic here, the list of corners is exactly
+			// the list of the first vertex of each edge in the polygon
+			mycorners[idx].push_back(pt1);
+
+			v = {vertB->x, vertB->y, 0.0f};
+			auto found2 = vertices_ad.find(vertB);
+			assert(found2 != vertices_ad.end());
+			int pt2 = found2->second;
+
+			// Find the left polygon neighbor of the edge
+			int neigh1;
+			if (halfedge->edge->lSite) {
+				auto found_idx1 = cells_ad.find(halfedge->edge->lSite->cell);
+				assert(found_idx1 != cells_ad.end());
+				neigh1 = found_idx1->second;
+			} else {
+				neigh1 = -1;
+			}
+
+			// Find the right polygon neighbor of the edge
+			int neigh2;
+			if (halfedge->edge->rSite) {
+				auto found_idx2 = cells_ad.find(halfedge->edge->rSite->cell);
+				assert(found_idx2 != cells_ad.end());
+				neigh2 = found_idx2->second;
+			} else {
+				neigh2 = -1;
+			}
+
+			// Either neighbor 1 or neighbor2 of the edge is the current polygon
+			assert(neigh1 == idx || neigh2 == idx && neigh1 != neigh2);
+
+			// Which is why we can easily find the neighbor of this polygon
+			// along this edge
+			int idx_neigh = neigh1 == idx ? neigh2 : neigh1;
+
+			// By convention, add to the adjacency list only if the index
+			// of the neighboring polygon is smaller than the current one
+			// (to avoid having the same adjdacents twice in the list). Takes
+			// into account the case where the neighbor is -1 (no neighbor),
+			// in which case we actually add to the adjacency list.
+			if (idx_neigh < idx) {
+				adjacents[pt1].push_back(std::make_tuple(pt2, neigh1, neigh2));
+				adjacents[pt2].push_back(std::make_tuple(pt1, neigh1, neigh2));
+			}
+
+			// Since we are iterating over idx, we know
+			// each idx will be added at most once.
+			touches[pt1].push_back(idx);
+			touches[pt2].push_back(idx);
+
+			// Add the edge in the form of (neighbor, idx of 1st corner, idx of 2nd corner)
+			l.push_back(std::make_tuple(idx_neigh, pt1, pt2));
+		}
+		neighbors[idx] = l;
+		idx++;
+	}
+
 	// Always free up memory at the end
-    jcv_diagram_free( &diagram );
+	delete sites;
+	delete diagram;
 }
 
 /// Creates an ocean border around the island.

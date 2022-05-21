@@ -7,7 +7,11 @@
 #include <queue>
 #include <functional>
 #include <random>
+#include <chrono>
 #include "cgp/cgp.hpp"
+#include "voronoi/include/Point2.h"
+#include "voronoi/include/Vector2.h"
+#include "voronoi/include/VoronoiDiagramGenerator.h"
 
 /// The element of the GUI that are not already stored in other structures.
 struct gui_parameters {
@@ -55,8 +59,6 @@ public:
 	void draw_segment(cgp::vec3 const& a, cgp::vec3 const& b);
 
 	// Drawable structures to display the Voronoi diagram
-	cgp::mesh_drawable particle_sphere;
-	cgp::segments_drawable segment;
 	cgp::mesh_drawable sea;
 	cgp::mesh_drawable terrain;
 
@@ -88,8 +90,6 @@ public:
 	/// The display of the GUI, also called within the animation loop. 
 	void display_gui();
 private:
-	/// Compares the heights of the two points. Used exclusively for Dijkstra.
-	static bool CompareHeights(const std::pair<int,int> &a, const std::pair<int,int> &b);
 	/// Creates the terrain.
 	void create_terrain();
 	/// Computes the heights of the Voronoi polygons.
