@@ -2,6 +2,8 @@
 
 const float SNOW_HEIGHT = 0.8f;
 const float SNOW_STD = 0.2f;
+/// Number of relaxations to perform on the Voronoi diagram.
+const int RELAX_CNT = 2;
 
 using namespace cgp;
 using namespace std::chrono;
@@ -309,6 +311,14 @@ void scene_structure::create_voronoi(int n) {
 	mycorners.resize(N);
 
 	Diagram* diagram = vdg.compute(*sites, bbox);
+
+	// Add relaxation (place gems at the centroid
+	// of their polygons and recompute Voronoi diagrams)
+	for (int i = 0; i < RELAX_CNT; i++) {
+		Diagram* prevDiagram = diagram;
+		diagram = vdg.relax();
+		delete prevDiagram;
+	}
 
 	// Store the centers
 	int idx = 0;
