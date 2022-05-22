@@ -28,7 +28,10 @@ int main(int, char* argv[]) {
   	srand (time(NULL));
 	
 	// Standard Initialization with dimension in pixels
-	GLFWwindow* window = standard_window_initialization(); 
+	GLFWwindow* window = standard_window_initialization();
+
+	//Makes the mouse move more smoothly. Implement a button to leave scene before decommenting
+	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	// Custom scene initialization
 	std::cout << "Initialize data of the scene ..." << std::endl;
@@ -69,11 +72,12 @@ void window_size_callback(GLFWwindow* , int width, int height) {
 }
 
 // This function is called everytime the mouse is moved
-void mouse_move_callback(GLFWwindow* /*window*/, double xpos, double ypos) {
+void mouse_move_callback(GLFWwindow* window, double xpos, double ypos) {
 	scene.inputs.mouse_position_update( { xpos, ypos } );
 
 	// Default trackball mode - change this behavior as you wish
-	camera_standard_behavior_rotation_spherical_coordinates(scene.environment.camera, scene.inputs);
+	//camera_standard_behavior_rotation_spherical_coordinates(scene.environment.camera, scene.inputs);
+	scene.handleMouseMove(window);
 }
 
 // This function is called everytime a mouse button is clicked/released
@@ -82,8 +86,10 @@ void mouse_click_callback(GLFWwindow* /*window*/, int button, int action, int /*
 }
 
 // This function is called everytime a keyboard touch is pressed/released
-void keyboard_callback(GLFWwindow* /*window*/, int key, int , int action, int /*mods*/) {
+void keyboard_callback(GLFWwindow* window, int key, int , int action, int /*mods*/) {
 	scene.inputs.keyboard.update_from_glfw_key(key, action);
+
+	scene.handleKeyPress(window, key, action);
 }
 
 // Standard initialization procedure

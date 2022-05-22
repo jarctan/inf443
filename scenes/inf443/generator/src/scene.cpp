@@ -11,9 +11,85 @@ const float SIZE = 20.0f;
 
 mesh cylinder(float r, float h);
 
+void scene_structure::handleKeyPress(GLFWwindow* window, int key, int action) {
+
+	inputs_keyboard_parameters const& keyboard = inputs.keyboard;
+	
+	//block handling activation and deactivation of camera movement
+	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+		cameraCanMove = !cameraCanMove;
+		if (cameraCanMove) {
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+		}
+		else {
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+		}
+	}
+
+	//block handling camera movement
+	if (cameraCanMove) {
+		camera_head& camera = environment.camera;
+
+		float const dt = timer.update();
+		vec3 displacement;
+
+		if (key == GLFW_KEY_W && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+			vec3 frontDirection = vec3(camera.front().x, camera.front().y, 0);
+			frontDirection = frontDirection / norm(frontDirection);
+			displacement = speed * dt * frontDirection;
+		}
+		else if (key == GLFW_KEY_A && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+			vec3 leftDirection = vec3(-camera.front().y, camera.front().x, 0);
+			leftDirection = leftDirection / norm(leftDirection);
+			displacement = speed * dt * leftDirection;
+		}
+		else if (key == GLFW_KEY_D && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+			vec3 rightDirection = vec3(camera.front().y, -camera.front().x, 0);
+			rightDirection = rightDirection / norm(rightDirection);
+			displacement = speed * dt * rightDirection;
+		}
+		else if (key == GLFW_KEY_S && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+			vec3 backDirection = vec3(-camera.front().x, -camera.front().y, 0);
+			backDirection = backDirection / norm(backDirection);
+			displacement = speed * dt * backDirection;
+		}
+		else if (key == GLFW_KEY_SPACE && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+			displacement = speed * dt * vec3(0, 0, 1);
+		}
+		else if (key == GLFW_KEY_ENTER && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+			displacement = speed * dt * vec3(0, 0, -1);
+		}
+
+		camera.position_camera += displacement;
+	}
+}
+
+void scene_structure::handleMouseMove(GLFWwindow* window) {
+	if (cameraCanMove) {
+		int screenWidth = 0, screenHeight = 0;
+		glfwGetWindowSize(window, &screenWidth, &screenHeight);
+		double xpos, ypos;
+		glfwGetCursorPos(window, &xpos, &ypos);
+		glfwSetCursorPos(window, screenWidth / 2.0f, screenHeight / 2.0f);
+		camera_head& camera = environment.camera;
+		float const dt = timer.update();
+
+		rotation_transform initialOrientation = rotation_transform::from_axis_angle(vec3(1, 0, 0), initial_camera_pitch);
+
+		camera_yaw += (screenWidth / 2.0f - xpos) * dt * mouseSpeed;
+		camera_pitch += (screenHeight / 2.0f - ypos) * dt * mouseSpeed;
+
+		rotation_transform r_pitch = rotation_transform::from_axis_angle(vec3(1, 0, 0), camera_pitch);
+		rotation_transform r_yaw = rotation_transform::from_axis_angle(vec3(0, 1, 0), camera_yaw);
+
+		camera.orientation_camera = initialOrientation * r_yaw * r_pitch;
+	}
+}
+
 /// This function is called only once at the beginning of the program
 /// and initializes the meshes, diagrams and other structures.
 void scene_structure::initialize() {
+	// Set the behavior of the camera and its initial position
 	randeng = default_random_engine(time(NULL));
 
 	auto start = high_resolution_clock::now();
@@ -83,8 +159,10 @@ void scene_structure::initialize() {
 
 	// Create a visual frame representing the coordinate system
 	global_frame.initialize(mesh_primitive_frame(), "Frame");
-	environment.camera.axis = camera_spherical_coordinates_axis::z;
-	environment.camera.look_at({ 5.0f,5.0f,15.0f }, { 5,5,0 });;
+	environment.camera.position_camera = { 5.0f, 5.0f, 10.0f };
+	environment.camera.manipulator_rotate_roll_pitch_yaw(0, camera_pitch, camera_yaw); //initial rotation value
+
+	timer.scale = 0.5f;
 }
 
 // This function is constantly called at every frame
@@ -597,7 +675,7 @@ void scene_structure::add_biotopes() {
 }
 
 
-/// Adds remaining biotopes.
+/// Adds wind.
 void scene_structure::add_wind() {
 	for (int i = 0; i < (int) SIZE; i++) {
 		windfield.push_back({});
@@ -627,7 +705,7 @@ mesh cylinder(float r, float h) {
             float v = kv/(N-1.0f);
 
             // Compute the local surface function
-            vec3 p = {r*std::cos(2* Pi *u), r*std::sin(2* Pi *u), h*(v-0.5f)};
+            vec3 p = {r*cos(2* Pi *u), r*sin(2* Pi *u), h*(v-0.5f)};
 
             // Store vertex coordinates
             cylinder.position[kv+N*ku] = p;

@@ -12,7 +12,7 @@
 #include "voronoi/include/Point2.h"
 #include "voronoi/include/Vector2.h"
 #include "voronoi/include/VoronoiDiagramGenerator.h"
-
+#include "environment_camera_head.hpp"
 
 using namespace cgp;
 using namespace std::chrono;
@@ -66,7 +66,7 @@ public:
 	/// The standard global frame.
 	mesh_drawable global_frame;
 	/// Standard environment controler.
-	scene_environment_basic_camera_spherical_coords environment;
+	scene_environment_camera_head environment;
 	/// Storage for inputs status (mouse, keyboard, window dimension).
 	inputs_interaction_parameters inputs;
 
@@ -110,6 +110,18 @@ public:
 	void display();
 	/// The display of the GUI, also called within the animation loop. 
 	void display_gui();
+
+	//variables and methods for the player movement
+	float speed = 100;
+	float initial_camera_pitch = cgp::Pi / 2.0f;
+	float initial_camera_yaw = 0;
+	float camera_pitch = 0;
+	float camera_yaw = 0;
+	float mouseSpeed = 1;
+	bool cameraCanMove = true;
+	void handleKeyPress(GLFWwindow* window, int key, int action);
+	void handleMouseMove(GLFWwindow* window);
+
 private:
 	/// Creates the terrain.
 	void create_terrain();
