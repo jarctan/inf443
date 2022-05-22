@@ -13,6 +13,11 @@
 #include "voronoi/include/Vector2.h"
 #include "voronoi/include/VoronoiDiagramGenerator.h"
 
+
+using namespace cgp;
+using namespace std::chrono;
+using namespace std;
+
 /// The element of the GUI that are not already stored in other structures.
 struct gui_parameters {
 	bool display_frame = true;
@@ -39,6 +44,18 @@ enum class Biotope {
 	SubtropicalDesert,
 };
 
+struct Neighbor {
+  int polygon;
+  int vertA;
+  int vertB;
+};
+
+struct Adjacent {
+  int vertex;
+  int polyA;
+  int polyB;
+};
+
 /// The structure of the custom scene.
 struct scene_structure {
 public:
@@ -47,38 +64,42 @@ public:
 	// ****************************** //
 
 	/// The standard global frame.
-	cgp::mesh_drawable global_frame;
+	mesh_drawable global_frame;
 	/// Standard environment controler.
-	cgp::scene_environment_basic_camera_spherical_coords environment;
+	scene_environment_basic_camera_spherical_coords environment;
 	/// Storage for inputs status (mouse, keyboard, window dimension).
-	cgp::inputs_interaction_parameters inputs;
+	inputs_interaction_parameters inputs;
 
 	/// Standard GUI element storage.
 	gui_parameters gui;
 
-	void draw_segment(cgp::vec3 const& a, cgp::vec3 const& b);
+	/// Drawable structures to display the Voronoi diagram.
+	mesh_drawable terrain;
 
-	// Drawable structures to display the Voronoi diagram
-	cgp::mesh_drawable sea;
-	cgp::mesh_drawable terrain;
+	/// Drawable structures to display the Voronoi diagram.
+	mesh_drawable ship;
+
+	/// Skybox.
+	skybox_drawable skybox;
 
 	// Structures representing the Voronoi diagram in memory
-	// TODO: improve it
 	int N; // The number of clusters
-	std::vector<cgp::vec3> centers; // Their centers
-    std::vector<std::vector<int>> mycorners; // The set of the corners of a polygon
-    std::vector<std::vector<std::tuple<int,int,int>>> neighbors; // The neighbors of a polygon
-    std::vector<Biotope> biotopes; // The biotope of the cluster
-    std::vector<float> waterdists; // The distance to the water
+	vector<vec3> centers; // Their centers
+    vector<vector<int>> mycorners; // The set of the corners of a polygon
+    vector<vector<Neighbor>> neighbors; // The set of neighbors of a polygon
+    vector<Biotope> biotopes; // The biotope of the polygon
+    vector<float> waterdists; // The distance to the water
+    vector<vector<pair<float,float>>> windfield; // Wind field
+    vector<vector<float>> heightfield; // Height field
 
 	int N_corners; // The number of corners
-    std::vector<cgp::vec3> corners; // The corners
-	std::vector<std::vector<int>> touches; // The list of polygons a corner  touches
-    std::vector<std::vector<std::tuple<int,int,int>>> adjacents; // The adjacents corners of a corner
-    std::default_random_engine randeng;
+    vector<vec3> corners; // The corners
+	vector<vector<int>> touches; // The list of polygons a corner  touches
+    vector<vector<Adjacent>> adjacents; // The adjacents corners of a corner
+    default_random_engine randeng;
 
 	/// Timer used for the animation.
-	cgp::timer_basic timer;
+	timer_basic timer;
 
 	// ****************************** //
 	// Functions
@@ -107,9 +128,6 @@ private:
 	void laplacian_smoothing();
 	/// Adds remaining biotopes.
 	void add_biotopes();
+	/// Adds a wind field
+	void add_wind();
 };
-
-
-
-
-

@@ -1,70 +1,100 @@
 #include "scene.hpp"
 
-const float SNOW_HEIGHT = 0.8f;
-const float SNOW_STD = 0.2f;
+const float MOIS_STD = 0.2f;
+const float EL_STD = 0.2f;
 /// Number of relaxations to perform on the Voronoi diagram.
 const int RELAX_CNT = 2;
+/// (Estimate) number of polygons to use to generate the diagram.
+const int POLYGON_CNT = 30000;
+/// SIze of the generated terrain (height and width)
+const float SIZE = 20.0f;
 
-using namespace cgp;
-using namespace std::chrono;
+mesh cylinder(float r, float h);
 
 /// This function is called only once at the beginning of the program
 /// and initializes the meshes, diagrams and other structures.
 void scene_structure::initialize() {
-	randeng = std::default_random_engine(time(NULL));
+	randeng = default_random_engine(time(NULL));
 
 	auto start = high_resolution_clock::now();
-	create_voronoi(6000);
+	create_voronoi(POLYGON_CNT);
 	auto stop = high_resolution_clock::now();
 	auto duration = duration_cast<milliseconds>(stop - start);
-	std::cout << "Voronoi diagram in " << duration.count() << "ms [OK]" << std::endl;
+	cout << "Voronoi diagram in " << duration.count() << "ms [OK]" << endl;
 
 	start = high_resolution_clock::now();
 	create_ocean_border();
 	stop = high_resolution_clock::now();
 	duration = duration_cast<milliseconds>(stop - start);
-	std::cout << "Ocean border in " << duration.count() << "ms [OK]" << std::endl;
+	cout << "Ocean border in " << duration.count() << "ms [OK]" << endl;
 
 	start = high_resolution_clock::now();
 	compute_heights();
 	stop = high_resolution_clock::now();
 	duration = duration_cast<milliseconds>(stop - start);
-	std::cout << "Compute height in " << duration.count() << "ms [OK]" << std::endl;
+	cout << "Compute height in " << duration.count() << "ms [OK]" << endl;
 
 	start = high_resolution_clock::now();
 	compute_waterdists();
 	stop = high_resolution_clock::now();
 	duration = duration_cast<milliseconds>(stop - start);
-	std::cout << "Water distance in " << duration.count() << "ms [OK]" << std::endl;
+	cout << "Water distance in " << duration.count() << "ms [OK]" << endl;
 
 	// Compute the elevation of the centers of the polygons
 	start = high_resolution_clock::now();
 	smooth_centers();
 	stop = high_resolution_clock::now();
 	duration = duration_cast<milliseconds>(stop - start);
-	std::cout << "Smooth centers in " << duration.count() << "ms [OK]" << std::endl;
+	cout << "Smooth centers in " << duration.count() << "ms [OK]" << endl;
 
 	start = high_resolution_clock::now();
 	add_biotopes();
 	stop = high_resolution_clock::now();
 	duration = duration_cast<milliseconds>(stop - start);
-	std::cout << "Biotopes in " << duration.count() << "ms [OK]" << std::endl;
+	cout << "Biotopes in " << duration.count() << "ms [OK]" << endl;
+
+	start = high_resolution_clock::now();
+	add_wind();
+	stop = high_resolution_clock::now();
+	duration = duration_cast<milliseconds>(stop - start);
+	cout << "Wind field in " << duration.count() << "ms [OK]" << endl;
+
+	start = high_resolution_clock::now();
+	create_terrain();
+	stop = high_resolution_clock::now();
+	cout << "Terrain in " << duration.count() << "ms [OK]" << endl;
+
+	// Initialize the skybox
+	// The path must contain 6 texture images
+	skybox.initialize("assets/skybox/");
+
+    float r = 0.1f;
+    float h = 0.3f;
+	mesh cylinder_mesh = cylinder(r, h);
+	ship.initialize(cylinder_mesh, "Ship");
+	for (int idx = 0; idx < N; idx++) {
+		if (biotopes[idx] == Biotope::Ocean) {
+			ship.transform.translation = centers[idx];
+			break;
+		}
+	}
+
+	timer.scale = 0.5f;
 
 	// Create a visual frame representing the coordinate system
 	global_frame.initialize(mesh_primitive_frame(), "Frame");
 	environment.camera.axis = camera_spherical_coordinates_axis::z;
 	environment.camera.look_at({ 5.0f,5.0f,15.0f }, { 5,5,0 });;
-
-	start = high_resolution_clock::now();
-	create_terrain();
-	stop = high_resolution_clock::now();
-	std::cout << "Terrain in " << duration.count() << "ms [OK]" << std::endl;
-
-	timer.scale = 0.5f;
 }
 
 // This function is constantly called at every frame
 void scene_structure::display() {
+	// Display of the skybox
+	// Note: The skybox must be drawn before the other shapes 
+	// Skybox is displayed without writing in the z-buffer.
+	// In displaying it first, the cube appears beyond any other shape.
+	draw(skybox, environment);
+
 	// Set the light to the current position of the camera
 	environment.light = environment.camera.position();
 
@@ -74,10 +104,18 @@ void scene_structure::display() {
 
 	// Update the current time
 	timer.update();
+	auto wind = windfield[(int) ship.transform.translation.x][(int) ship.transform.translation.y];
+	float ship_x = ship.transform.translation.x + wind.first;
+	float ship_y = ship.transform.translation.y + wind.second;
+	if (ship_x >= 0.0f && ship_y >= 0.0f && ship_x <= (float) SIZE && ship_y <= (float) SIZE) {
+		ship.transform.translation.x = ship_x;
+		ship.transform.translation.y = ship_y;
+		ship.transform.translation.z = heightfield[(int) ship_x][(int) ship_y];
+	}
 
 	// Draw the lines between the clusters, and the borders
-	draw(sea, environment);
 	draw(terrain, environment);
+	draw(ship, environment);
 }
 
 /// Displays the GUI elements.
@@ -87,11 +125,11 @@ void scene_structure::display_gui() {
 
 /// Creates a terrain mesh based on the Voronoi diagram.
 void scene_structure::create_terrain() {
-	mesh sea_mesh = mesh_primitive_grid({-20,-20,-0.01f},{20,-20,-0.01f},{20,20,-0.01f},{-20,20,-0.01f});
-	// Initialize and sets the right color for the terrain
-	sea.initialize(sea_mesh, "sea");
-	sea.shading.color = { 0,0.412f,0.58f };
-	sea.shading.phong.specular = 0;
+	// Initializes heightmap
+	heightfield.resize((int) SIZE + 1, {});
+	for (int i = 0; i < (int) SIZE + 1; i++) {
+		heightfield[i].resize((int) SIZE + 1, INFINITY);
+	}
 
     // Terrain geometry
 	mesh terrain_mesh;
@@ -102,43 +140,45 @@ void scene_structure::create_terrain() {
 		mesh polygon_mesh;
 		const int center_idx = 0;
 
-		vec4 color;
+		vec3 color;
 		if (biotopes[k] == Biotope::Ocean)
-			color = vec4(0,0.412f,0.58f,0.0f);
+			color = vec3(0.0f,0.412f,0.58f);
 		else if (biotopes[k] == Biotope::Lake)
-			color = vec4(0.2f,0.59f,0.885f,1.0f);
+			color = vec3(0.2f,0.59f,0.885f);
 		else if (biotopes[k] == Biotope::Snow)
-			color = vec4(1.0f,1.0f,1.0f,1.0f);
+			color = vec3(1.0f,1.0f,1.0f);
 		else if (biotopes[k] == Biotope::Tundra)
-			color = vec4(0.867f,0.867f,0.733f,1.0f);
+			color = vec3(0.867f,0.867f,0.733f);
 		else if (biotopes[k] == Biotope::Bare)
-			color = vec4(0.733f,0.733f,0.733f,1.0f);
+			color = vec3(0.733f,0.733f,0.733f);
 		else if (biotopes[k] == Biotope::Scorched)
-			color = vec4(0.6f,0.6f,0.6f,1.0f);
+			color = vec3(0.6f,0.6f,0.6f);
 		else if (biotopes[k] == Biotope::Taiga)
-			color = vec4(0.8f,0.831f,0.733f,1.0f);
+			color = vec3(0.8f,0.831f,0.733f);
 		else if (biotopes[k] == Biotope::Shrubland)
-			color = vec4(0.769f,0.8f,0.733f,1.0f);
+			color = vec3(0.769f,0.8f,0.733f);
 		else if (biotopes[k] == Biotope::TempDesert)
-			color = vec4(0.894f,0.91f,0.792f,1.0f);
+			color = vec3(0.894f,0.91f,0.792f);
 		else if (biotopes[k] == Biotope::TempRainForest)
-			color = vec4(0.643f,0.769f,0.659f,1.0f);
+			color = vec3(0.643f,0.769f,0.659f);
 		else if (biotopes[k] == Biotope::TempDeciduousForest)
-			color = vec4(0.706f,0.788f,0.663f,1.0f);
+			color = vec3(0.706f,0.788f,0.663f);
 		else if (biotopes[k] == Biotope::Grassland)
-			color = vec4(0.769f,0.831f,0.667f,1.0f);
+			color = vec3(0.769f,0.831f,0.667f);
 		else if (biotopes[k] == Biotope::TropicalRainForest)
-			color = vec4(0.612f,0.733f,0.663f,1.0f);
+			color = vec3(0.612f,0.733f,0.663f);
 		else if (biotopes[k] == Biotope::TropicalSeasonalForest)
-			color = vec4(0.663f,0.8f,0.643f,1.0f);
+			color = vec3(0.663f,0.8f,0.643f);
 		else if (biotopes[k] == Biotope::SubtropicalDesert)
-			color = vec4(0.914f,0.867f,0.78f,1.0f);
+			color = vec3(0.914f,0.867f,0.78f);
 		else
-			color = vec4(0.6f,0.85f,0.5f,0.0f);
+			color = vec3(0.6f,0.85f,0.5f);
 
+		heightfield[(int) centers[k].x][(int) centers[k].y] = centers[k].z;
 		polygon_mesh.position.push_back(centers[k]);
 		polygon_mesh.color.push_back(color);
 		for(int& corner: mycorners[k]) {
+			heightfield[(int) corners[corner].x][(int) corners[corner].y] = corners[corner].z;
 			polygon_mesh.position.push_back(corners[corner]);
 			polygon_mesh.color.push_back(color);
 		}
@@ -181,20 +221,20 @@ void scene_structure::compute_heights() {
 	}
 
 	// Build the priority queue
-	std::priority_queue<std::pair<int,int>, std::vector<std::pair<int,int>>, std::function<bool(std::pair<int,int>, std::pair<int,int>)>> Q([] (const std::pair<int,int> &a, const std::pair<int,int> &b) {
+	priority_queue<pair<int,int>, vector<pair<int,int>>, function<bool(pair<int,int>, pair<int,int>)>> Q([] (const pair<int,int> &a, const pair<int,int> &b) {
    		return a.second > b.second;
 	});
 	for (int v = 0; v < N_corners; v++) {
-		Q.push(std::pair<int,int>(v, corners[v].z));
+		Q.push(pair<int,int>(v, corners[v].z));
 	}
 	
 	while (!Q.empty()) {
 		int u = Q.top().first;
 		Q.pop();
 		for (auto& adjacent: adjacents[u]) {
-			int v = std::get<0>(adjacent);
-			int poly_1 = std::get<1>(adjacent);
-			int poly_2 = std::get<2>(adjacent);
+			int v = adjacent.vertex;
+			int poly_1 = adjacent.polyA;
+			int poly_2 = adjacent.polyB;
 			float dist;
 			if (biotopes[poly_1] == Biotope::Ocean) {
 				if (biotopes[poly_2] == Biotope::Lake) biotopes[poly_2] = Biotope::Ocean;
@@ -207,13 +247,17 @@ void scene_structure::compute_heights() {
 			} else {
 				vec2 corner_u = { corners[u].x, corners[u].y };
 				vec2 corner_v = { corners[v].x, corners[v].y };
-				dist = norm(corner_u - corner_v);
+				vec2 pt = normalize((corner_u + corner_v) / 2);
+				float noise = noise_perlin(pt, 2, 0.291f, 10.0f)/15.0f;
+				// float noise = std::pow(noise_perlin(pt, 6, 0.291f, 5.268f),1.7f); when multiplied by norm
+				// float noise = noise_perlin(pt, 6, 0.507f, 1.982f); when multiplied by norm
+				dist = noise;
 			}
 
-			float alt = corners[u].z + dist;
+			float alt = max(corners[u].z + dist, 0.0f);
 			if (alt < corners[v].z) {
 				corners[v].z = alt;
-				Q.push(std::pair<int,int>(v, corners[v].z));
+				Q.push(pair<int,int>(v, corners[v].z));
 			}
 		}
 	}
@@ -233,18 +277,18 @@ void scene_structure::compute_waterdists() {
 	}
 
 	// Build the priority queue
-	std::priority_queue<std::pair<int,int>, std::vector<std::pair<int,int>>, std::function<bool(std::pair<int,int>, std::pair<int,int>)>> Q([] (const std::pair<int,int> &a, const std::pair<int,int> &b) {
+	priority_queue<pair<int,int>, vector<pair<int,int>>, function<bool(pair<int,int>, pair<int,int>)>> Q([] (const pair<int,int> &a, const pair<int,int> &b) {
    		return a.second > b.second;
 	});
 	for (int v = 0; v < N; v++) {
-		Q.push(std::pair<int,int>(v, waterdists[v]));
+		Q.push(pair<int,int>(v, waterdists[v]));
 	}
 	
 	while (!Q.empty()) {
 		int u = Q.top().first;
 		Q.pop();
 		for (auto& neighbor: neighbors[u]) {
-			int v = std::get<0>(neighbor);
+			int v = neighbor.polygon;
 			float alt;
 			if (biotopes[u] == Biotope::Ocean || biotopes[u] == Biotope::Lake) {
 				alt = 0;
@@ -256,7 +300,7 @@ void scene_structure::compute_waterdists() {
 
 			if (alt < waterdists[v]) {
 				waterdists[v] = alt;
-				Q.push(std::pair<int,int>(v, waterdists[v]));
+				Q.push(pair<int,int>(v, waterdists[v]));
 			}
 		}
 	}
@@ -266,14 +310,14 @@ void scene_structure::compute_waterdists() {
 /// and updates the class fields accordingly.
 void scene_structure::create_voronoi(int n) {
 	VoronoiDiagramGenerator vdg = VoronoiDiagramGenerator();
-	std::vector<Point2>* sites = new std::vector<Point2>();
-	BoundingBox bbox = BoundingBox(0, 10, 10, 0);
+	vector<Point2>* sites = new vector<Point2>();
+	BoundingBox bbox = BoundingBox(0, SIZE, SIZE, 0);
 
 	// Create points, with possible duplicates
 	// Use a temporary structure to hold data, we will remove duplicates afterwards
 	// Heavily inspired by https://github.com/mdally/Voronoi/blob/master/examples/OpenGL_Example.cpp
 	// in particular `genRandomSites()`
-	std::vector<Point2> tmpSites;
+	vector<Point2> tmpSites;
 
 	tmpSites.reserve(n);
 	sites->reserve(n);
@@ -281,15 +325,15 @@ void scene_structure::create_voronoi(int n) {
 	Point2 s;
 
 	for (unsigned int i = 0; i < n; ++i) {
-		s.x = (rand() / (double)RAND_MAX)*10.0d;
-		s.y = (rand() / (double)RAND_MAX)*10.0d;
+		s.x = (rand() / (double)RAND_MAX)*(double) SIZE;
+		s.y = (rand() / (double)RAND_MAX)*(double) SIZE;
 		tmpSites.push_back(s);
 	}
 
 	// Remove any duplicates that exist
 	// To do this, sort the temporary sites
 	// and add them if they are not a duplicate.
-	std::sort(tmpSites.begin(), tmpSites.end(), [] (const Point2& s1, const Point2& s2) {
+	sort(tmpSites.begin(), tmpSites.end(), [] (const Point2& s1, const Point2& s2) {
 		// Use lexicographic order to sort points
 		if (s1.x < s2.x)
 			return true;
@@ -331,20 +375,20 @@ void scene_structure::create_voronoi(int n) {
 	// Assign a number to each polygon and each vertex, and store it in
 	// a map. These maps will help to find the number of each cell or vertex
 	// in no time.
-	std::map<Cell*, int> cells_ad;
+	map<Cell*, int> cells_ad;
 	for (Cell* cell: diagram->cells) {
 		int i = cells_ad.size();
-		cells_ad.insert(std::pair<Cell*,int>(cell, i));
+		cells_ad.insert(pair<Cell*,int>(cell, i));
 	}
 
-	std::map<Point2*, int> vertices_ad;
+	map<Point2*, int> vertices_ad;
 	for (Point2* pt: diagram->vertices) {
 		int i = corners.size();
 		vec3 v = {pt->x, pt->y, 0.0f};
 		corners.push_back(v);
 		touches.push_back({});
 		adjacents.push_back({});
-		vertices_ad.insert(std::pair<Point2*,int>(pt, i));
+		vertices_ad.insert(pair<Point2*,int>(pt, i));
 	}
 
 	N_corners = corners.size();
@@ -352,7 +396,7 @@ void scene_structure::create_voronoi(int n) {
 	// Store the corners and neighbors
 	idx = 0;
 	for (Cell* c: diagram->cells) {
-		std::vector<std::tuple<int,int,int>> l;
+		vector<Neighbor> l;
 
         for (HalfEdge* halfedge: c->halfEdges) {
 			Point2* vertA = halfedge->startPoint();
@@ -395,7 +439,7 @@ void scene_structure::create_voronoi(int n) {
 			}
 
 			// Either neighbor 1 or neighbor2 of the edge is the current polygon
-			assert(neigh1 == idx || neigh2 == idx && neigh1 != neigh2);
+			assert((neigh1 == idx || neigh2 == idx) && neigh1 != neigh2);
 
 			// Which is why we can easily find the neighbor of this polygon
 			// along this edge
@@ -407,8 +451,8 @@ void scene_structure::create_voronoi(int n) {
 			// into account the case where the neighbor is -1 (no neighbor),
 			// in which case we actually add to the adjacency list.
 			if (idx_neigh < idx) {
-				adjacents[pt1].push_back(std::make_tuple(pt2, neigh1, neigh2));
-				adjacents[pt2].push_back(std::make_tuple(pt1, neigh1, neigh2));
+				adjacents[pt1].push_back({pt2, neigh1, neigh2});
+				adjacents[pt2].push_back({pt1, neigh1, neigh2});
 			}
 
 			// Since we are iterating over idx, we know
@@ -416,8 +460,8 @@ void scene_structure::create_voronoi(int n) {
 			touches[pt1].push_back(idx);
 			touches[pt2].push_back(idx);
 
-			// Add the edge in the form of (neighbor, idx of 1st corner, idx of 2nd corner)
-			l.push_back(std::make_tuple(idx_neigh, pt1, pt2));
+			// Add the edge in the adjacency list
+			l.push_back({idx_neigh, pt1, pt2});
 		}
 		neighbors[idx] = l;
 		idx++;
@@ -430,19 +474,24 @@ void scene_structure::create_voronoi(int n) {
 
 /// Creates an ocean border around the island.
 void scene_structure::create_ocean_border() {
+	// Random seed computed once to generate different perlin noise
+	// at each time. This seed is used as an offset of the position
+	// to determine where to look in the (bidimentional, infinite) texture.
+	float delta_x = (rand() / (double)RAND_MAX)*20.0f;
+	float delta_y = (rand() / (double)RAND_MAX)*20.0f;
+
 	for(int idx = 0; idx < N; idx++) {
 		for (auto& corner_idx: mycorners[idx]) {
 			vec3& corner = corners[corner_idx];
-			if (corner.x <= 0.2f || corner.y <= 0.2f || corner.x >= 9.8f || corner.y  >= 9.8f) {
+			if (corner.x <= 0.2f || corner.y <= 0.2f || corner.x >= (float) SIZE - 0.2f || corner.y  >= (float) SIZE - 0.2f) {
 				  biotopes[idx] = Biotope::Ocean;
 			}
 		}
-		// Old values:
-		// * threshold: 0.5f
-		// * noise_perlin: 6, 0.37f, 2.2f
-		// * noise < threshold
-		float threshold = 1.0f;
-		if (noise_perlin({centers[idx].x, centers[idx].y}, 2, 0.1f, 1.0f) > threshold) {
+		vec2 pt = {centers[idx].x / (float) 10.0f + delta_x, centers[idx].y / (float) 10.0f + delta_y};
+		// First proposition: if (noise_perlin(pt, 6, 0.291f, 5.268f) > 0.6f) {
+		if (noise_perlin(pt, 6, 0.291f, 5.268f) > 0.8f // Ocean
+			|| noise_perlin({pt.x * 1.5f, pt.y * 1.5f}, 2, 0.355f, 3.603f) > 1.1f // Lakes
+		) {
 			biotopes[idx] = Biotope::Lake;
 		}
 	}
@@ -467,7 +516,7 @@ void scene_structure::laplacian_smoothing() {
 		float mean = 0.0f;
 		int n = 0;
 		for (auto& adjacent: adjacents[v]) {
-			mean += corners[std::get<0>(adjacent)].z;
+			mean += corners[adjacent.vertex].z;
 			n++;
 		}
 		for (int& poly: touches[v]) {
@@ -482,19 +531,30 @@ void scene_structure::laplacian_smoothing() {
 
 /// Adds remaining biotopes.
 void scene_structure::add_biotopes() {
-	std::vector<float> orderedWaterdists = waterdists;
+	vector<float> orderedWaterdists = waterdists;
 	sort(orderedWaterdists.begin(), orderedWaterdists.end());
 
-	std::vector<float> orderedHeights = {};
+	vector<float> orderedHeights = {};
 	orderedHeights.resize(N);
 	for (int i = 0; i < N; i++)
         orderedHeights[i] = corners[i].z;
 	sort(orderedHeights.begin(), orderedHeights.end());
 
-	// Find seperators between moisture and elevation zones
-	float el2 = orderedHeights[N/4];
-	float el3 = orderedHeights[N/2];
-	float el4 = orderedHeights[3*N/4];
+	// Find highest, finite height
+	float max_height;
+	for (int i = N-1; i >= 0; i--) {
+		if (orderedHeights[i] < INFINITY) {
+			max_height = orderedHeights[i];
+			break;
+		}
+	}
+
+	// Find seperator values between elevation zones
+	float el2 = max_height/4;
+	float el3 = max_height/2;
+	float el4 = 3*max_height/4;
+
+	// Find separator values between moisture zones
 	float mois1 = orderedWaterdists[N/6];
 	float mois2 = orderedWaterdists[2*N/6];
 	float mois3 = orderedWaterdists[N/2];
@@ -502,31 +562,94 @@ void scene_structure::add_biotopes() {
 	float mois5 = orderedWaterdists[5*N/6];
 	
 	// We define snow biotopes based on elevation
-    std::normal_distribution<double> distEl4(el4,SNOW_STD); 
-    std::normal_distribution<double> distEl3(el3,SNOW_STD);
-    std::normal_distribution<double> distEl2(el2,SNOW_STD);
+    normal_distribution<double> distEl4(el4,EL_STD); 
+    normal_distribution<double> distEl3(el3,EL_STD);
+    normal_distribution<double> distEl2(el2,EL_STD);
+    normal_distribution<double> distMois1(mois1,MOIS_STD); 
+    normal_distribution<double> distMois2(mois2,MOIS_STD);
+    normal_distribution<double> distMois3(mois3,MOIS_STD);
+    normal_distribution<double> distMois4(mois4,MOIS_STD);
+    normal_distribution<double> distMois5(mois5,MOIS_STD);
 	for (int idx = 0; idx < N; idx++) {
 		if (biotopes[idx] != Biotope::Land)
 			continue;
 		if (centers[idx].z >= distEl4(randeng)) {
-			if (waterdists[idx] <= mois3) biotopes[idx] = Biotope::Snow;
-			else if (waterdists[idx] <= mois4) biotopes[idx] = Biotope::Tundra;
-			else if (waterdists[idx] <= mois5) biotopes[idx] = Biotope::Bare;
+			if (waterdists[idx] <= distMois3(randeng)) biotopes[idx] = Biotope::Snow;
+			else if (waterdists[idx] <= distMois4(randeng)) biotopes[idx] = Biotope::Tundra;
+			else if (waterdists[idx] <= distMois5(randeng)) biotopes[idx] = Biotope::Bare;
 			else biotopes[idx] = Biotope::Scorched;
 		} else if (centers[idx].z >= distEl3(randeng)) {
-			if (waterdists[idx] <= mois2) biotopes[idx] = Biotope::Taiga;
-			else if (waterdists[idx] <= mois4) biotopes[idx] = Biotope::Shrubland;
+			if (waterdists[idx] <= distMois2(randeng)) biotopes[idx] = Biotope::Taiga;
+			else if (waterdists[idx] <= distMois4(randeng)) biotopes[idx] = Biotope::Shrubland;
 			else biotopes[idx] = Biotope::TempDesert;
 		} else if (centers[idx].z >= distEl2(randeng)) {
-			if (waterdists[idx] <= mois1) biotopes[idx] = Biotope::TempRainForest;
-			else if (waterdists[idx] <= mois3) biotopes[idx] = Biotope::TempDeciduousForest;
-			else if (waterdists[idx] <= mois5) biotopes[idx] = Biotope::Grassland;
+			if (waterdists[idx] <= distMois1(randeng)) biotopes[idx] = Biotope::TempRainForest;
+			else if (waterdists[idx] <= distMois3(randeng)) biotopes[idx] = Biotope::TempDeciduousForest;
+			else if (waterdists[idx] <= distMois5(randeng)) biotopes[idx] = Biotope::Grassland;
 			else biotopes[idx] = Biotope::TempDesert;
 		} else {
-			if (waterdists[idx] <= mois2) biotopes[idx] = Biotope::TropicalRainForest;
-			else if (waterdists[idx] <= mois4) biotopes[idx] = Biotope::TropicalSeasonalForest;
-			else if (waterdists[idx] <= mois5) biotopes[idx] = Biotope::Grassland;
+			if (waterdists[idx] <= distMois2(randeng)) biotopes[idx] = Biotope::TropicalRainForest;
+			else if (waterdists[idx] <= distMois4(randeng)) biotopes[idx] = Biotope::TropicalSeasonalForest;
+			else if (waterdists[idx] <= distMois5(randeng)) biotopes[idx] = Biotope::Grassland;
 			else biotopes[idx] = Biotope::SubtropicalDesert;
 		}
 	}	
+}
+
+
+/// Adds remaining biotopes.
+void scene_structure::add_wind() {
+	for (int i = 0; i < (int) SIZE; i++) {
+		windfield.push_back({});
+		for (int j = 0; j < (int) SIZE; j++) {
+			windfield[i].push_back(pair<float,float>(0.005f,-0.005f));
+		}
+	}
+}
+
+/// Create a cylinder
+/// TODO: change or remove to create a real ship.
+mesh cylinder(float r, float h) {
+    // Number of samples of the terrain is N x N
+    int N = 20;
+
+    mesh cylinder; // temporary terrain storage (CPU only)
+    cylinder.position.resize(N*N);
+    cylinder.uv.resize(N*N);
+
+    // Fill terrain geometry
+    for(int ku=0; ku<N; ++ku)
+    {
+        for(int kv=0; kv<N; ++kv)
+        {
+            // Compute local parametric coordinates (u,v) \in [0,1]
+            float u = ku/(N-1.0f);
+            float v = kv/(N-1.0f);
+
+            // Compute the local surface function
+            vec3 p = {r*std::cos(2* Pi *u), r*std::sin(2* Pi *u), h*(v-0.5f)};
+
+            // Store vertex coordinates
+            cylinder.position[kv+N*ku] = p;
+            cylinder.uv[kv+N*ku] = {u, v};
+        }
+    }
+
+    // Generate triangle organization
+    for(int ku=0; ku<N-1; ++ku)
+    {
+        for(int kv=0; kv<N-1; ++kv)
+        {
+            int idx = kv + N*ku;
+
+            uint3 triangle_1 = {idx, idx+1+N, idx+1};
+            uint3 triangle_2 = {idx, idx+N, idx+1+N};
+
+            cylinder.connectivity.push_back(triangle_1);
+            cylinder.connectivity.push_back(triangle_2);
+        }
+    }
+
+	cylinder.fill_empty_field();
+    return cylinder;
 }
