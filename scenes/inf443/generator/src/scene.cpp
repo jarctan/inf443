@@ -7,7 +7,7 @@ const int RELAX_CNT = 2;
 /// (Estimate) number of polygons to use to generate the diagram.
 const int POLYGON_CNT = 30000;
 /// SIze of the generated terrain (height and width)
-const float SIZE = 20.0f;
+const float TERRAIN_SIZE = 20.0f;
 
 mesh cylinder(float r, float h);
 
@@ -185,7 +185,7 @@ void scene_structure::display() {
 	auto wind = windfield[(int) ship.transform.translation.x][(int) ship.transform.translation.y];
 	float ship_x = ship.transform.translation.x + wind.first;
 	float ship_y = ship.transform.translation.y + wind.second;
-	if (ship_x >= 0.0f && ship_y >= 0.0f && ship_x <= (float) SIZE && ship_y <= (float) SIZE) {
+	if (ship_x >= 0.0f && ship_y >= 0.0f && ship_x <= (float) TERRAIN_SIZE && ship_y <= (float) TERRAIN_SIZE) {
 		ship.transform.translation.x = ship_x;
 		ship.transform.translation.y = ship_y;
 		ship.transform.translation.z = heightfield[(int) ship_x][(int) ship_y];
@@ -204,9 +204,9 @@ void scene_structure::display_gui() {
 /// Creates a terrain mesh based on the Voronoi diagram.
 void scene_structure::create_terrain() {
 	// Initializes heightmap
-	heightfield.resize((int) SIZE + 1, {});
-	for (int i = 0; i < (int) SIZE + 1; i++) {
-		heightfield[i].resize((int) SIZE + 1, INFINITY);
+	heightfield.resize((int) TERRAIN_SIZE + 1, {});
+	for (int i = 0; i < (int) TERRAIN_SIZE + 1; i++) {
+		heightfield[i].resize((int) TERRAIN_SIZE + 1, INFINITY);
 	}
 
     // Terrain geometry
@@ -389,7 +389,7 @@ void scene_structure::compute_waterdists() {
 void scene_structure::create_voronoi(int n) {
 	VoronoiDiagramGenerator vdg = VoronoiDiagramGenerator();
 	vector<Point2>* sites = new vector<Point2>();
-	BoundingBox bbox = BoundingBox(0, SIZE, SIZE, 0);
+	BoundingBox bbox = BoundingBox(0, TERRAIN_SIZE, TERRAIN_SIZE, 0);
 
 	// Create points, with possible duplicates
 	// Use a temporary structure to hold data, we will remove duplicates afterwards
@@ -403,8 +403,8 @@ void scene_structure::create_voronoi(int n) {
 	Point2 s;
 
 	for (unsigned int i = 0; i < n; ++i) {
-		s.x = (rand() / (double)RAND_MAX)*(double) SIZE;
-		s.y = (rand() / (double)RAND_MAX)*(double) SIZE;
+		s.x = (rand() / (double)RAND_MAX)*(double) TERRAIN_SIZE;
+		s.y = (rand() / (double)RAND_MAX)*(double) TERRAIN_SIZE;
 		tmpSites.push_back(s);
 	}
 
@@ -561,7 +561,7 @@ void scene_structure::create_ocean_border() {
 	for(int idx = 0; idx < N; idx++) {
 		for (auto& corner_idx: mycorners[idx]) {
 			vec3& corner = corners[corner_idx];
-			if (corner.x <= 0.2f || corner.y <= 0.2f || corner.x >= (float) SIZE - 0.2f || corner.y  >= (float) SIZE - 0.2f) {
+			if (corner.x <= 0.2f || corner.y <= 0.2f || corner.x >= (float) TERRAIN_SIZE - 0.2f || corner.y  >= (float) TERRAIN_SIZE - 0.2f) {
 				  biotopes[idx] = Biotope::Ocean;
 			}
 		}
@@ -677,9 +677,9 @@ void scene_structure::add_biotopes() {
 
 /// Adds wind.
 void scene_structure::add_wind() {
-	for (int i = 0; i < (int) SIZE; i++) {
+	for (int i = 0; i < (int) TERRAIN_SIZE; i++) {
 		windfield.push_back({});
-		for (int j = 0; j < (int) SIZE; j++) {
+		for (int j = 0; j < (int) TERRAIN_SIZE; j++) {
 			windfield[i].push_back(pair<float,float>(0.005f,-0.005f));
 		}
 	}
