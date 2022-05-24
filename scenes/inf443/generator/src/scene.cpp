@@ -503,7 +503,7 @@ void scene_structure::create_voronoi(int n) {
 				assert(found_idx1 != cells_ad.end());
 				neigh1 = found_idx1->second;
 			} else {
-				neigh1 = -1;
+				neigh1 = 0;
 			}
 
 			// Find the right polygon neighbor of the edge
@@ -513,7 +513,7 @@ void scene_structure::create_voronoi(int n) {
 				assert(found_idx2 != cells_ad.end());
 				neigh2 = found_idx2->second;
 			} else {
-				neigh2 = -1;
+				neigh2 = 0;
 			}
 
 			// Either neighbor 1 or neighbor2 of the edge is the current polygon
