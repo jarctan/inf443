@@ -144,6 +144,16 @@ void scene_structure::initialize() {
 	// The path must contain 6 texture images
 	skybox.initialize("assets/skybox/");
 
+	// draw birds
+	mesh bird_mesh = mesh_load_file_obj("assets/camel.obj");
+	for (int i = 0; i < n_birds; i++) {
+		mesh_drawable bird;
+		bird.initialize(bird_mesh, "bird mesh");
+		bird.transform.translation = { 0, 0, 10 * rand()};
+		bird.transform.scaling = 0.5f;
+		birds.push_back(bird);
+	}
+
     float r = 0.1f;
     float h = 0.3f;
 	mesh cylinder_mesh = cylinder(r, h);
@@ -194,6 +204,9 @@ void scene_structure::display() {
 	// Draw the lines between the clusters, and the borders
 	draw(terrain, environment);
 	draw(ship, environment);
+	for (int i = 0; i < n_birds; i++) {
+		draw(birds[i], environment);
+	}
 }
 
 /// Displays the GUI elements.

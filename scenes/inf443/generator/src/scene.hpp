@@ -79,6 +79,10 @@ public:
 	/// Drawable structures to display the Voronoi diagram.
 	mesh_drawable ship;
 
+	/// Drawable bird
+	std::vector<mesh_drawable> birds;
+	int n_birds = 10;
+
 	/// Skybox.
 	skybox_drawable skybox;
 
