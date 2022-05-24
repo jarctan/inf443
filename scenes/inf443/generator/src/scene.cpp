@@ -314,13 +314,13 @@ void scene_structure::compute_heights() {
 			int poly_1 = adjacent.polyA;
 			int poly_2 = adjacent.polyB;
 			float dist;
-			if (biotopes[poly_1] == Biotope::Ocean) {
-				if (biotopes[poly_2] == Biotope::Lake) biotopes[poly_2] = Biotope::Ocean;
+			if (poly_1 != -1 && biotopes[poly_1] == Biotope::Ocean) {
+				if (poly_2 != -1 && biotopes[poly_2] == Biotope::Lake) biotopes[poly_2] = Biotope::Ocean;
 				dist = 0;
-			} else if (biotopes[poly_2] == Biotope::Ocean) {
-				if (biotopes[poly_1] == Biotope::Lake) biotopes[poly_1] = Biotope::Ocean;
+			} else if (poly_2 != -1 && biotopes[poly_2] == Biotope::Ocean) {
+				if (poly_1 != -1 && biotopes[poly_1] == Biotope::Lake) biotopes[poly_1] = Biotope::Ocean;
 				dist = 0;
-			} else if (biotopes[poly_1] == Biotope::Lake || biotopes[poly_2] == Biotope::Lake) {
+			} else if ((poly_1 != -1 && biotopes[poly_1] == Biotope::Lake) || (poly_2 != -1 && biotopes[poly_2] == Biotope::Lake)) {
 				dist = 0;
 			} else {
 				vec2 corner_u = { corners[u].x, corners[u].y };
@@ -367,6 +367,7 @@ void scene_structure::compute_waterdists() {
 		Q.pop();
 		for (auto& neighbor: neighbors[u]) {
 			int v = neighbor.polygon;
+			if (v == -1) continue;
 			float alt;
 			if (biotopes[u] == Biotope::Ocean || biotopes[u] == Biotope::Lake) {
 				alt = 0;
@@ -503,7 +504,7 @@ void scene_structure::create_voronoi(int n) {
 				assert(found_idx1 != cells_ad.end());
 				neigh1 = found_idx1->second;
 			} else {
-				neigh1 = 0;
+				neigh1 = -1;
 			}
 
 			// Find the right polygon neighbor of the edge
@@ -513,7 +514,7 @@ void scene_structure::create_voronoi(int n) {
 				assert(found_idx2 != cells_ad.end());
 				neigh2 = found_idx2->second;
 			} else {
-				neigh2 = 0;
+				neigh2 = -1;
 			}
 
 			// Either neighbor 1 or neighbor2 of the edge is the current polygon
