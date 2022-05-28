@@ -75,6 +75,14 @@ struct Ship {
 	int polygon;
 };
 
+/// A snowflake.
+struct Snowflake {
+	vec3 pos;
+	float speed_z;
+	int initial_polygon;
+	int polygon;
+};
+
 /// The structure of the custom scene.
 struct scene_structure {
 public:
@@ -116,8 +124,15 @@ private:
 	/// Ships to display on the sea: the mesh and their positions.
 	mesh_drawable ship_drawable;
 	vector<Ship> ships;
-	vector<vec3> particles; // position of particles
+
+	// Cloud particles
+	vector<vec3> particles;
 	mesh_drawable cloud;
+
+	// Snow
+    normal_distribution<double> snowheight;
+	vector<Snowflake> snowflakes;
+	mesh_drawable snowflake;
 
 	/// Drawable bird
 	std::vector<mesh_drawable> birds;
@@ -170,4 +185,6 @@ private:
 	void add_wind();
 	/// Adds ships.
 	void add_ships();
+	/// Adds snowflakes.
+	void add_snow();
 };

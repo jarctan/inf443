@@ -136,6 +136,11 @@ void scene_structure::initialize() {
 	stop = high_resolution_clock::now();
 	cout << "Ships added in " << duration.count() << "ms [OK]" << endl;
 
+	start = high_resolution_clock::now();
+	add_snow();
+	stop = high_resolution_clock::now();
+	cout << "Snow added in " << duration.count() << "ms [OK]" << endl;
+
 	// Initialize the skybox
 	// The path must contain 6 texture images
 	skybox.initialize("assets/skybox/");
@@ -167,13 +172,19 @@ void scene_structure::initialize() {
 		}
 	}
 	cloud.initialize(mesh_primitive_quadrangle({ -particle_size,0,0 }, { particle_size,0,0 }, { particle_size,0,particle_size }, { -particle_size,0,particle_size }));
-	//cloud.shading.color = { 1.0f, 1.0f, 1.0f };
 	cloud.texture = opengl_load_texture_image("assets/cloud.png");
-	cloud.shading.alpha = 0.4f;
+	cloud.shading.alpha = 0.8f;
 	cloud.transform.translation.z = 1.0f;
 	cloud.shading.phong.specular = 0.0f;
 	cloud.shading.phong.diffuse = 0.0f;
 	cloud.shading.phong.ambient = 1.0f;
+
+	// Create snowflakes
+	snowflake.initialize(mesh_primitive_quadrangle({ -particle_size,0,0 }, { particle_size,0,0 }, { particle_size,0,particle_size }, { -particle_size,0,particle_size }));
+	snowflake.texture = opengl_load_texture_image("assets/snowflake.png");
+	snowflake.shading.phong.specular = 0.0f;
+	snowflake.shading.phong.diffuse = 0.0f;
+	snowflake.shading.phong.ambient = 1.0f;
 
 	// Create a visual frame representing the coordinate system
 	global_frame.initialize(mesh_primitive_frame(), "Frame");
@@ -304,13 +315,65 @@ void scene_structure::display_semi_transparent() {
 		vec2 wind;
 		vec2 pos2D = { particle.x, particle.y };
 		for (Windsource* source: windsources) {
-			wind += source->field(particle);
+			wind += source->field(pos2D);
 		}
 		pos2D += wind;
 		particle.x = pos2D.x;
 		particle.y = pos2D.y;
 		cloud.transform.translation = particle;
 		draw(cloud, environment);
+	}
+
+	// For each snowflake, update and print
+	for (Snowflake& particle: snowflakes) {
+		vec2 wind;
+		vec2 pos2D = { particle.pos.x, particle.pos.y };
+		for (Windsource* source: windsources) {
+			wind += source->field(pos2D);
+		}
+		pos2D += wind;
+		particle.pos.x = pos2D.x;
+		particle.pos.y = pos2D.y;
+		particle.speed_z -= 0.0000981;
+		particle.pos.z += particle.speed_z * timer.scale;
+
+		// Find
+		// Update if necessary the polygon where the snowflake stands	
+		// Since we rely on Voronoi cells, it is known that if you are closer
+		// to the center of a neighboring centroid than to the center of your
+		// own polygon, you now belong to the neighboring polygon
+		vec2 my_center = { centers[particle.polygon].x, centers[particle.polygon].y };
+		vec2 my_pos = { particle.pos.x, particle.pos.y };
+		for(Neighbor& neighbor: neighbors[particle.polygon]) {
+			vec2 new_center = { centers[neighbor.polygon].x, centers[neighbor.polygon].y };
+			if (norm(my_pos-new_center) < norm(my_pos-my_center)) {
+				particle.polygon = neighbor.polygon;
+				break;
+			}
+		}
+
+		// If we reach the ground, spawn again in the sky
+		if (particle.pos.z < centers[particle.polygon].z) {
+			particle.pos.x = centers[particle.initial_polygon].x;
+			particle.pos.y = centers[particle.initial_polygon].y;
+			particle.pos.z = snowheight(randeng);
+			particle.speed_z = 0;
+
+			// If there snow on a non-snow biotope, change the biotope
+			// on a random basis
+			if (biotopes[particle.polygon] != Biotope::Snow 
+				&& biotopes[particle.polygon] != Biotope::Lake
+				&& biotopes[particle.polygon] != Biotope::Ocean
+				&& rand() % 75 == 0) {
+				cout << "New snow biotope added" << endl;
+				biotopes[particle.polygon] = Biotope::Snow;
+				terrain.clear();
+				create_terrain();
+			}
+		}
+
+		snowflake.transform.translation = particle.pos;
+		draw(snowflake, environment);
 	}
 
 	// Don't forget to re-activate the depth-buffer write
@@ -835,6 +898,17 @@ void scene_structure::add_ships() {
 				ships[i] = { centers[idx], dir, false, idx };
 				break;
 			}
+		}
+	}
+}
+
+/// Adds ships.
+void scene_structure::add_snow() {
+    snowheight = normal_distribution<double>(max_height + 0.7f,0.7f);
+	for (int idx = 0; idx < N; idx++) {
+		if (biotopes[idx] == Biotope::Snow) {
+			vec3 pos = {centers[idx].x, centers[idx].y, snowheight(randeng)};
+			snowflakes.push_back({ pos, 0, idx, idx });
 		}
 	}
 }

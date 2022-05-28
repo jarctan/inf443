@@ -40,6 +40,9 @@ public:
 	}
 	void step(float dt) override {
 		center += direction * dt;
+		if (center.x >= (float) TERRAIN_SIZE || center.x <= 0.0f || center.y >= (float) TERRAIN_SIZE || center.y <= 0.0f) {
+			direction = - direction;
+		}
 	}
 private:
 	float strength;

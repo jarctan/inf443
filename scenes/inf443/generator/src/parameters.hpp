@@ -5,7 +5,7 @@ const float EL_STD = 0.2f;
 /// Number of relaxations to perform on the Voronoi diagram.
 const int RELAX_CNT = 2;
 /// (Estimate) number of polygons to use to generate the diagram.
-const int POLYGON_CNT = 20000;
+const int POLYGON_CNT = 15000;
 /// SIze of the generated terrain (height and width)
 const float TERRAIN_SIZE = 20.0f;
 /// Square root of the number of particle par cloud layer.
