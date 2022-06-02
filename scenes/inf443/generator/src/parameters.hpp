@@ -18,3 +18,6 @@ const int PARTICLE_CNT = 20;
 const int SHIP_CNT = 40;
 /// Size of a particle (whether it be a cloud or a snowflake).
 const float PARTICLE_SIZE = 0.05f;
+// Number of particles around each particle guide
+// If your computer can handle it, you might wish to increase it beyond 0.
+const unsigned int PARTICLES_PER_GUIDE = 0;

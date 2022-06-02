@@ -32,10 +32,10 @@ public:
 			return strength * normalize(direction);
 		} else if (proj <= - bandwidth / 4) {
 			float radius = bandwidth / 4;
-			return strength * exp(-0.5f * pow(proj + bandwidth / 4, 2.0f)/pow(radius, 2.0f)) * normalize(direction);
+			return strength * exp(-0.5f * pow(proj + bandwidth / 4, 2)/pow(radius, 2)) * normalize(direction);
 		} else {
 			float radius = bandwidth / 4;
-			return strength * exp(-0.5f * pow(proj - bandwidth / 4, 2.0f)/pow(radius, 2.0f)) * normalize(direction);
+			return strength * exp(-0.5f * pow(proj - bandwidth / 4, 2)/pow(radius, 2)) * normalize(direction);
 		} 
 	}
 	void step(float dt) override {
@@ -62,7 +62,7 @@ public:
 	vec2 field(vec2 pos) override {
 		vec2 v = pos - center;
 		vec2 t = { - v.y, v.x };
-		return (clockwise ? 1 : -1) * strength * exp(-0.5f * pow(norm(v), 2.0f)/pow(radius, 2.0f)) * normalize(t);
+		return (clockwise ? 1 : -1) * strength * exp(-0.5f * pow(norm(v), 2)/pow(radius, 2)) * normalize(t);
 	}
 	
 	void step(float dt) override {
@@ -91,7 +91,7 @@ public:
 		const vec2 v = pos - center;
 		const vec2 none = { 0.0f, 0.0f};
 		if (norm(v) > 0.001f)
-			return strength * exp(-0.5f * pow(norm(v) - mean, 2.0f)/pow(radius, 2.0f)) * normalize(v);
+			return strength * exp(-0.5f * pow(norm(v) - mean, 2)/pow(radius, 2)) * normalize(v);
 		else
 			return none;
 	}

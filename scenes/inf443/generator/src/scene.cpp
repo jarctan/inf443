@@ -293,8 +293,19 @@ void scene_structure::display_semi_transparent() {
 		pos2D += wind;
 		particle.x = pos2D.x;
 		particle.y = pos2D.y;
-		cloud.transform.translation = particle;
-		draw(cloud, environment);
+
+		// Use these guiding particles to draw many particles around
+		// Seems however to be really resources-intensive, so we may have to limit the number of particles drawn
+		// to only one. If you computer can handle it, you can increase PARTICLES_PER_GUIDE and see the result.
+		// We use a slight perlin noise to have a deterministic, continuous noise
+		for (int i = -PARTICLES_PER_GUIDE; i <= PARTICLES_PER_GUIDE; i++) {
+			for (int j = -PARTICLES_PER_GUIDE; j <= PARTICLES_PER_GUIDE; j++) {
+				float perlin_x = noise_perlin({particle.x / (float) TERRAIN_SIZE, particle.y / (float) TERRAIN_SIZE}, 4, 3.26f, 2.268f) / 500;
+				float perlin_y = noise_perlin({particle.x / (float) TERRAIN_SIZE, particle.y / (float) TERRAIN_SIZE}, 4, 3.26f, 2.978f) / 500;
+				cloud.transform.translation = { particle.x + i * PARTICLE_SIZE + perlin_x, particle.y + perlin_y + j * PARTICLE_SIZE, particle.z } ;
+				draw(cloud, environment);
+			}
+		}
 	}
 
 	// For each snowflake, update and print
@@ -844,7 +855,7 @@ void scene_structure::add_wind() {
 
 	// Add gusts
 	for (int i = 0; i < 5; i++) {
-		Gust* gust = new Gust(vec2 { (rand() / (float) RAND_MAX)*(float) TERRAIN_SIZE, (rand() / (float) RAND_MAX)*(float) TERRAIN_SIZE}, 0.001f * normalize(vec2 { rand(), rand() }), 0.002f, 2.0f);
+		Gust* gust = new Gust(vec2 { (rand() / (float) RAND_MAX)*(float) TERRAIN_SIZE, (rand() / (float) RAND_MAX)*(float) TERRAIN_SIZE}, 0.001f * normalize(vec2 { rand(), rand() }), 0.002f, 2);
 		windsources.push_back(gust);
 	}
 
