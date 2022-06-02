@@ -41,6 +41,8 @@ public:
 	void step(float dt) override {
 		center += direction * dt;
 		if (center.x >= (float) TERRAIN_SIZE || center.x <= 0.0f || center.y >= (float) TERRAIN_SIZE || center.y <= 0.0f) {
+			center.x = max(min((float) TERRAIN_SIZE - 0.5f, center.x), 0.5f);
+			center.y = max(min((float) TERRAIN_SIZE - 0.5f, center.y), 0.5f);
 			direction = - direction;
 		}
 	}
@@ -66,6 +68,8 @@ public:
 	void step(float dt) override {
 		center += direction * dt;
 		if (center.x >= (float) TERRAIN_SIZE || center.x <= 0.0f || center.y >= (float) TERRAIN_SIZE || center.y <= 0.0f) {
+			center.x = max(min((float) TERRAIN_SIZE - 0.5f, center.x), 0.5f);
+			center.y = max(min((float) TERRAIN_SIZE - 0.5f, center.y), 0.5f);
 			direction = - direction;
 		}
 	}

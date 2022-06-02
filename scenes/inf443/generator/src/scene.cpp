@@ -137,54 +137,23 @@ void scene_structure::initialize() {
 	cout << "Ships added in " << duration.count() << "ms [OK]" << endl;
 
 	start = high_resolution_clock::now();
-	add_snow();
+	add_snowflakes();
 	stop = high_resolution_clock::now();
 	cout << "Snow added in " << duration.count() << "ms [OK]" << endl;
+
+	start = high_resolution_clock::now();
+	add_birds();
+	stop = high_resolution_clock::now();
+	cout << "Birds added in " << duration.count() << "ms [OK]" << endl;
+
+	start = high_resolution_clock::now();
+	add_cloud();
+	stop = high_resolution_clock::now();
+	cout << "Cloud added in " << duration.count() << "ms [OK]" << endl;
 
 	// Initialize the skybox
 	// The path must contain 6 texture images
 	skybox.initialize("assets/skybox/");
-
-	// draw birds
-	mesh bird_mesh = mesh_load_file_obj("assets/camel.obj");
-	for (int i = 0; i < n_birds; i++) {
-		mesh_drawable bird;
-		bird.initialize(bird_mesh, "bird mesh");
-		bird.transform.translation = { 0, 0, 10 * rand()};
-		bird.transform.scaling = 0.5f;
-		birds.push_back(bird);
-	}
-
-	// Create a new ship
-	mesh ship_mesh = mesh_load_file_obj("assets/boat.obj");
-	ship_drawable.initialize(ship_mesh, "Ship");
-	ship_drawable.transform.scaling = 0.0005f;
-	ship_drawable.shading.color = { 0.73f, 0.55f, 0.39f }; // Wood color
-
-	// Create a cloud with n*n particles
-    normal_distribution<double> distEl4(max_height,0.04f);
-	float particle_size = 0.05f;
-	for (int k = 0; k < 3; k++) {
-		for (int i = 0; i < PARTICLE_CNT; i++) {
-			for (int j = 0; j < PARTICLE_CNT; j++) {
-				particles.push_back({(float) i/PARTICLE_CNT, (float) j/PARTICLE_CNT, distEl4(randeng) + k * particle_size });
-			}
-		}
-	}
-	cloud.initialize(mesh_primitive_quadrangle({ -particle_size,0,0 }, { particle_size,0,0 }, { particle_size,0,particle_size }, { -particle_size,0,particle_size }));
-	cloud.texture = opengl_load_texture_image("assets/cloud.png");
-	cloud.shading.alpha = 0.8f;
-	cloud.transform.translation.z = 1.0f;
-	cloud.shading.phong.specular = 0.0f;
-	cloud.shading.phong.diffuse = 0.0f;
-	cloud.shading.phong.ambient = 1.0f;
-
-	// Create snowflakes
-	snowflake.initialize(mesh_primitive_quadrangle({ -particle_size,0,0 }, { particle_size,0,0 }, { particle_size,0,particle_size }, { -particle_size,0,particle_size }));
-	snowflake.texture = opengl_load_texture_image("assets/snowflake.png");
-	snowflake.shading.phong.specular = 0.0f;
-	snowflake.shading.phong.diffuse = 0.0f;
-	snowflake.shading.phong.ambient = 1.0f;
 
 	// Create a visual frame representing the coordinate system
 	global_frame.initialize(mesh_primitive_frame(), "Frame");
@@ -286,13 +255,17 @@ void scene_structure::display() {
 			ship_drawable.transform.rotation = rotation_transform::from_axis_angle({ 1,0,0 }, M_PI/2);
 
 			// We orient the ship
-			ship_drawable.transform.rotation = rotation_transform::between_vector({ 0.0f, 1.0f, 0.0f }, {ship.dir.x, ship.dir.y, 0.0f }) * ship_drawable.transform.rotation;
+			ship_drawable.transform.rotation = rotation_transform::between_vector({ 0.0f, -1.0f, 0.0f }, {ship.dir.x, ship.dir.y, 0.0f }) * ship_drawable.transform.rotation;
 
 			draw(ship_drawable, environment);
 		} else {
 			ship.outofscope = true;
 		}
 	}
+
+	remove_if(ships.begin(), ships.end(), [] (Ship& ship) {
+		return ship.outofscope;
+	});
 
 	display_semi_transparent();
 }
@@ -388,12 +361,6 @@ void scene_structure::display_gui() {
 
 /// Creates a terrain mesh based on the Voronoi diagram.
 void scene_structure::create_terrain() {
-	// Initializes heightmap
-	heightfield.resize((int) TERRAIN_SIZE + 1, {});
-	for (int i = 0; i < (int) TERRAIN_SIZE + 1; i++) {
-		heightfield[i].resize((int) TERRAIN_SIZE + 1, INFINITY);
-	}
-
     // Terrain geometry
 	mesh terrain_mesh;
     for (int k = 0; k < N; k++) {
@@ -437,11 +404,9 @@ void scene_structure::create_terrain() {
 		else
 			color = vec3(0.6f,0.85f,0.5f);
 
-		heightfield[(int) centers[k].x][(int) centers[k].y] = centers[k].z;
 		polygon_mesh.position.push_back(centers[k]);
 		polygon_mesh.color.push_back(color);
 		for(int& corner: mycorners[k]) {
-			heightfield[(int) corners[corner].x][(int) corners[corner].y] = corners[corner].z;
 			polygon_mesh.position.push_back(corners[corner]);
 			polygon_mesh.color.push_back(color);
 		}
@@ -458,6 +423,7 @@ void scene_structure::create_terrain() {
 
 		// Apply defaults
 		polygon_mesh.fill_empty_field();
+
 		terrain_mesh.push_back(polygon_mesh);
 	}
 
@@ -869,13 +835,15 @@ void scene_structure::add_wind() {
 			}
 		}
 	}
+
 	// Add cyclones
-	for (int i = 0; i < 10; i++) {
+	for (int i = 0; i < 5; i++) {
 		Cyclone* cyclone = new Cyclone(vec2 { (rand() / (float) RAND_MAX)*(float) TERRAIN_SIZE, (rand() / (float) RAND_MAX)*(float) TERRAIN_SIZE}, 0.002f, 1.5f, { 0.001, 0.001 }, rand() % 2 == 0);
 		windsources.push_back(cyclone);
 	}
+
 	// Add gusts
-	for (int i = 0; i < 10; i++) {
+	for (int i = 0; i < 5; i++) {
 		Gust* gust = new Gust(vec2 { (rand() / (float) RAND_MAX)*(float) TERRAIN_SIZE, (rand() / (float) RAND_MAX)*(float) TERRAIN_SIZE}, 0.001f * normalize(vec2 { rand(), rand() }), 0.002f, 2.0f);
 		windsources.push_back(gust);
 	}
@@ -887,10 +855,17 @@ void scene_structure::add_wind() {
 
 /// Adds ships.
 void scene_structure::add_ships() {
+	// Create a new ship mesh
+	mesh ship_mesh = mesh_load_file_obj("assets/boat.obj");
+	ship_drawable.initialize(ship_mesh, "Ship");
+	ship_drawable.transform.scaling = 0.0005f;
+	ship_drawable.shading.color = { 0.73f, 0.55f, 0.39f }; // Wood color
+
+	// Generates random boats on the sea
 	for (int i = 0; i < SHIP_CNT; i++) {
 		ships.push_back({});
 		
-		// We add ships wherever there's a ocean biotope.
+		// We add ships wherever there's a ocean biotope
 		while (true) {
 			int idx = rand() % N;
 			if (biotopes[idx] == Biotope::Ocean) {
@@ -902,13 +877,53 @@ void scene_structure::add_ships() {
 	}
 }
 
-/// Adds ships.
-void scene_structure::add_snow() {
-    snowheight = normal_distribution<double>(max_height + 0.7f,0.7f);
+/// Adds a cloud to the scene.
+void scene_structure::add_cloud() {
+	// Create a cloud with n*n particles
+    normal_distribution<double> distEl4(max_height,0.04f);
+	for (int k = 0; k < 3; k++) {
+		for (int i = 0; i < PARTICLE_CNT; i++) {
+			for (int j = 0; j < PARTICLE_CNT; j++) {
+				particles.push_back({(float) i/PARTICLE_CNT, (float) j/PARTICLE_CNT, distEl4(randeng) + k * PARTICLE_SIZE });
+			}
+		}
+	}
+	cloud.initialize(mesh_primitive_quadrangle({ -PARTICLE_SIZE,0,0 }, { PARTICLE_SIZE,0,0 }, { PARTICLE_SIZE,0,PARTICLE_SIZE }, { -PARTICLE_SIZE,0,PARTICLE_SIZE }));
+	cloud.texture = opengl_load_texture_image("assets/smoke.png");
+	cloud.shading.alpha = 0.8f;
+	cloud.transform.translation.z = 1.0f;
+	cloud.shading.phong.specular = 0.0f;
+	cloud.shading.phong.diffuse = 0.0f;
+	cloud.shading.phong.ambient = 1.0f;
+}
+
+/// Adds snowflakes to the scene.
+void scene_structure::add_snowflakes() {
+	snowheight = normal_distribution<double>(max_height + 0.7f,0.3f);
 	for (int idx = 0; idx < N; idx++) {
 		if (biotopes[idx] == Biotope::Snow) {
 			vec3 pos = {centers[idx].x, centers[idx].y, snowheight(randeng)};
 			snowflakes.push_back({ pos, 0, idx, idx });
 		}
+	}
+
+	// Create a snowflake mesh
+	snowflake.initialize(mesh_primitive_quadrangle({ -PARTICLE_SIZE,0,0 }, { PARTICLE_SIZE,0,0 }, { PARTICLE_SIZE,0,PARTICLE_SIZE }, { -PARTICLE_SIZE,0,PARTICLE_SIZE }));
+	snowflake.texture = opengl_load_texture_image("assets/snowflake.png");
+	snowflake.shading.phong.specular = 0.0f;
+	snowflake.shading.phong.diffuse = 0.0f;
+	snowflake.shading.phong.ambient = 1.0f;
+}
+
+/// Adds birds/boids to the scene.
+void scene_structure::add_birds() {
+	// draw birds
+	mesh bird_mesh = mesh_load_file_obj("assets/camel.obj");
+	for (int i = 0; i < n_birds; i++) {
+		mesh_drawable bird;
+		bird.initialize(bird_mesh, "bird mesh");
+		bird.transform.translation = { 0, 0, 10 * rand()};
+		bird.transform.scaling = 0.5f;
+		birds.push_back(bird);
 	}
 }

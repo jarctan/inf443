@@ -1,6 +1,8 @@
 #pragma once
 
+/// Standard deviation of the border btw the moisture zones.
 const float MOIS_STD = 0.2f;
+/// Standard deviation of the border btw the elevation zones.
 const float EL_STD = 0.2f;
 /// Number of relaxations to perform on the Voronoi diagram.
 const int RELAX_CNT = 2;
@@ -12,4 +14,7 @@ const float TERRAIN_SIZE = 20.0f;
 /// IMPORTANT: Change this value if your fps rate is too low.
 const int PARTICLE_CNT = 20;
 /// Number of ships.
-const int SHIP_CNT = 100;
+/// IMPORTANT: Change this value if your fps rate is too low.
+const int SHIP_CNT = 40;
+/// Size of a particle (whether it be a cloud or a snowflake).
+const float PARTICLE_SIZE = 0.05f;

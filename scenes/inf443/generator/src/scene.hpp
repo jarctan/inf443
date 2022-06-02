@@ -153,7 +153,6 @@ private:
     vector<Biotope> biotopes; // The biotope of the polygon
     vector<float> waterdists; // The distance to the water
     vector<Windsource*> windsources; // Wind sources
-    vector<vector<float>> heightfield; // Height field
 
 	int N_corners; // The number of corners
     vector<vec3> corners; // The corners
@@ -185,6 +184,10 @@ private:
 	void add_wind();
 	/// Adds ships.
 	void add_ships();
-	/// Adds snowflakes.
-	void add_snow();
+	/// Adds snowflakes to the scene.
+	void add_snowflakes();
+	/// Adds cloud particles to the scene.
+	void add_cloud();
+	/// Adds cloud particles to the scene.
+	void add_birds();
 };
