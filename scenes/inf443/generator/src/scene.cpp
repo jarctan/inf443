@@ -161,6 +161,8 @@ void scene_structure::initialize() {
 	environment.camera.manipulator_rotate_roll_pitch_yaw(0, camera_pitch, camera_yaw); //initial rotation value
 
 	timer.scale = 0.5;
+	camera_timer.scale = 0.1;
+	movement_timer.scale = 0.1;
 }
 
 // This function is constantly called at every frame
@@ -179,7 +181,7 @@ void scene_structure::display() {
 		draw(global_frame, environment);
 
 	// Update the current time
-	timer.update();
+	float dt = timer.update();
 
 	// Update the wind primitives
 	for (Windsource* source : windsources) {
@@ -190,8 +192,11 @@ void scene_structure::display() {
 	draw(terrain, environment);
 	
 	// Draw birds
+	update_birds_positions(dt, n_birds, birds);
 	for (int i = 0; i < n_birds; i++) {
-		draw(birds[i], environment);
+		birds[i].bird_drawable.transform.translation = birds[i].pos;
+		birds[i].bird_drawable.transform.rotation = rotation_transform::between_vector({ 0.0f, 1.0f, 0.0f }, normalize(birds[i].speed));
+		draw(birds[i].bird_drawable, environment);
 	}
 
 	// Compute the wind direction for each ship
@@ -831,7 +836,6 @@ void scene_structure::add_biotopes() {
 	}	
 }
 
-
 /// Adds wind.
 void scene_structure::add_wind() {
 	// Find the shore biotopes (these are
@@ -930,11 +934,105 @@ void scene_structure::add_snowflakes() {
 void scene_structure::add_birds() {
 	// draw birds
 	mesh bird_mesh = mesh_load_file_obj("assets/camel.obj");
+	
 	for (int i = 0; i < n_birds; i++) {
-		mesh_drawable bird;
-		bird.initialize(bird_mesh, "bird mesh");
-		bird.transform.translation = { 0, 0, 10 * rand()};
-		bird.transform.scaling = 0.5f;
-		birds.push_back(bird);
+		birds.push_back({});
+		vec3 initial_pos = { rand() % 10, rand() % 10, 8 + rand()%2 };
+		vec3 initial_speed = vec3( rand_interval(1.0, 10.0), rand_interval(1.0, 10.0), 0 );
+		mesh_drawable bird_drawable;
+		bird_drawable.initialize(bird_mesh, "Bird");
+		bird_drawable.transform.scaling = 0.2f;
+		birds[i].pos = initial_pos;
+		birds[i].speed = initial_speed;
+		birds[i].bird_drawable = bird_drawable;
 	}
+}
+
+
+void scene_structure::update_birds_positions(float dt, int n_birds, vector<Bird> &birds) {
+	update_birds_speeds(dt, n_birds, birds);
+	for (int i = 0; i < n_birds; i++) {
+		birds[i].set_position(birds[i].pos + birds[i].speed * dt);
+	}
+}
+void scene_structure::update_birds_speeds(float dt, int n_birds, vector<Bird> &birds) {
+	for (int i = 0; i < n_birds; i++) {
+		birds[i].fly_towards_others(dt, n_birds, birds);
+		birds[i].avoid_collision(dt, n_birds, birds);
+		birds[i].adapt_speed_to_others(dt, n_birds, birds);
+		birds[i].keep_within_boundaries(dt);
+		birds[i].limit_speed(dt);
+	}
+}
+void Bird:: fly_towards_others(float dt, int n_birds, vector<Bird> &birds) {
+	float radius_searched = 3.0f;
+	vec3 center = { 0,0,0 };
+	int n_neigbours = 0;
+	for (int i = 0; i < n_birds; i++) {
+		if (norm(this->pos - birds[i].pos) < pow(radius_searched, 2)) {
+			center += (this->pos - birds[i].pos) * center_follow_factor;
+			n_neigbours++;
+		}
+	}
+	if (n_neigbours) this->speed += (center - this->pos) * dt / n_neigbours;
+}
+void Bird::avoid_collision(float dt, int n_birds, vector<Bird> &birds) {
+	float max_distance = 0.8f;
+	for (int i = 0; i < n_birds; i++) {
+		float dist = norm(this->pos - birds[i].pos);
+		if (&birds[i] != this &&  dist < pow(max_distance, 2)) {
+			this->speed += (this->pos - birds[i].pos) * dt * avoiding_factor * (pow(dist,2) - 20*dist + 21);
+		}
+	}
+}
+void Bird::keep_within_boundaries(float dt) {
+	if (pos.x < 0.5) {
+		speed.x += border_avoiding_factor;
+	}
+	if (pos.x > TERRAIN_SIZE) {
+		speed.x -= border_avoiding_factor;
+	}
+	if (pos.y < 0.5) {
+		speed.y += border_avoiding_factor;
+	}
+	if (pos.y > TERRAIN_SIZE) {
+		speed.y -= border_avoiding_factor;
+	}
+	if (pos.z < 5.0) {
+		speed.z += border_avoiding_factor;
+	}
+	if (pos.z > 9.5) {
+		speed.z -= border_avoiding_factor;
+	}
+}
+void Bird::adapt_speed_to_others(float dt, int n_birds, vector<Bird>& birds) {
+	float radius_searched = 1.0f;
+	vec3 neighbours_mean_speed = { 0,0,0 };
+	int n_neigbours = 0;
+	for (int i = 0; i < n_birds; i++) {
+		if (&birds[i] != this && norm(this->pos - birds[i].pos) < pow(radius_searched, 2)) {
+			neighbours_mean_speed += birds[i].speed;
+			n_neigbours++;
+		}
+	}
+	if (n_neigbours) this->speed += neighbours_mean_speed * adapt_speed_factor / n_neigbours;
+}
+void Bird::limit_speed(float dt) {
+	if (speed.z > 0.5 || speed.z < -0.5) {
+		speed.z /= 3.0;
+	}
+	if (norm(this->speed) > max_speed) {
+		this->speed *= max_speed / norm(this->speed);
+	}
+	else if(norm(this->speed) < min_speed) {
+		this->speed *= min_speed / norm(this->speed);
+	}
+}
+
+void Bird::set_position(vec3 position) {
+	this->pos = position;
+}
+
+void Bird::set_speed(vec3 speed) {
+	this->speed = speed;
 }

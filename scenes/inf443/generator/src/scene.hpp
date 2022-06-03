@@ -83,6 +83,26 @@ struct Snowflake {
 	int polygon;
 };
 
+//A bird
+struct Bird {
+	mesh_drawable bird_drawable;
+	vec3 pos;
+	vec3 speed;
+	float center_follow_factor = 0.5;
+	float adapt_speed_factor = 0.05;
+	float avoiding_factor = 3.0;
+	float border_avoiding_factor = 0.075;
+	float min_speed = 0.5;
+	float max_speed = 5.0;
+	void fly_towards_others(float dt, int n_birds, vector<Bird> &birds);
+	void avoid_collision(float dt, int n_birds, vector<Bird> &birds);
+	void keep_within_boundaries(float dt);
+	void adapt_speed_to_others(float dt, int n_birds, vector<Bird>& birds);
+	void limit_speed(float dt);
+	void set_speed(vec3 speed);
+	void set_position(vec3 position);
+};
+
 /// The structure of the custom scene.
 struct scene_structure {
 public:
@@ -109,10 +129,14 @@ public:
 	float initial_camera_yaw = 0;
 	float camera_pitch = 0;
 	float camera_yaw = 0;
-	float mouseSpeed = 1;
+	float mouseSpeed = 1.0f;
 	bool cameraCanMove = true;
 	void handleKeyPress(GLFWwindow* window, int key, int action);
 	void handleMouseMove(GLFWwindow* window);
+
+	/// Birds
+	vector<Bird> birds;
+	static const int n_birds = 100;
 
 private:
 	/// Standard GUI element storage.
@@ -133,10 +157,6 @@ private:
     normal_distribution<double> snowheight;
 	vector<Snowflake> snowflakes;
 	mesh_drawable snowflake;
-
-	/// Drawable bird
-	std::vector<mesh_drawable> birds;
-	int n_birds = 10;
 
 	/// Skybox.
 	skybox_drawable skybox;
@@ -162,6 +182,9 @@ private:
 
 	/// Timer used for the animation.
 	timer_basic timer;
+	//timer used for the camera
+	timer_basic camera_timer;
+	timer_basic movement_timer;
 
 	/// Creates the terrain.
 	void create_terrain();
@@ -190,4 +213,8 @@ private:
 	void add_cloud();
 	/// Adds cloud particles to the scene.
 	void add_birds();
+
+	//variables and methods for bird movement
+	void update_birds_positions(float dt, int n_birds, vector<Bird> &birds);
+	void update_birds_speeds(float dt, int n_birds, vector<Bird> &birds);
 };
