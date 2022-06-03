@@ -13,6 +13,8 @@
 #include "voronoi/include/Vector2.h"
 #include "voronoi/include/VoronoiDiagramGenerator.h"
 #include "environment_camera_head.hpp"
+#include "parameters.hpp"
+#include "wind.hpp"
 
 using namespace cgp;
 using namespace std::chrono;
@@ -24,10 +26,11 @@ struct gui_parameters {
 	bool display_wireframe = false;
 };
 
-
+/// A biotope.
 enum class Biotope {
 	Land,
 	Ocean,
+	Shore,
 	Lake,
 	Snow,
 	Tundra,
@@ -44,25 +47,46 @@ enum class Biotope {
 	SubtropicalDesert,
 };
 
+/// A neighbor in the Voronoi diagram.
+/// It is characterized by the neighboring polygon,
+/// and the vertices of the edge between the two
+/// polygons.
 struct Neighbor {
   int polygon;
   int vertA;
   int vertB;
 };
 
+/// An adjacent vertex in the corresponding Delauney triangulation.
+/// It is characterized by the adjacent vertex,
+/// and the two polygons on either side of the border between these
+/// two vertices.
 struct Adjacent {
   int vertex;
   int polyA;
   int polyB;
 };
 
+/// A ship.
+struct Ship {
+	vec2 pos;
+	vec2 dir;
+	bool outofscope;
+	int polygon;
+};
+
+/// A snowflake.
+struct Snowflake {
+	vec3 pos;
+	float speed_z;
+	int initial_polygon;
+	int polygon;
+};
+
 /// The structure of the custom scene.
 struct scene_structure {
 public:
-	// ****************************** //
-	// Elements and shapes of the scene
-	// ****************************** //
-
+	~scene_structure();
 	/// The standard global frame.
 	mesh_drawable global_frame;
 	/// Standard environment controler.
@@ -70,48 +94,12 @@ public:
 	/// Storage for inputs status (mouse, keyboard, window dimension).
 	inputs_interaction_parameters inputs;
 
-	/// Standard GUI element storage.
-	gui_parameters gui;
-
-	/// Drawable structures to display the Voronoi diagram.
-	mesh_drawable terrain;
-
-	/// Drawable structures to display the Voronoi diagram.
-	mesh_drawable ship;
-
-	/// Drawable bird
-	std::vector<mesh_drawable> birds;
-	int n_birds = 10;
-
-	/// Skybox.
-	skybox_drawable skybox;
-
-	// Structures representing the Voronoi diagram in memory
-	int N; // The number of clusters
-	vector<vec3> centers; // Their centers
-    vector<vector<int>> mycorners; // The set of the corners of a polygon
-    vector<vector<Neighbor>> neighbors; // The set of neighbors of a polygon
-    vector<Biotope> biotopes; // The biotope of the polygon
-    vector<float> waterdists; // The distance to the water
-    vector<vector<pair<float,float>>> windfield; // Wind field
-    vector<vector<float>> heightfield; // Height field
-
-	int N_corners; // The number of corners
-    vector<vec3> corners; // The corners
-	vector<vector<int>> touches; // The list of polygons a corner  touches
-    vector<vector<Adjacent>> adjacents; // The adjacents corners of a corner
-    default_random_engine randeng;
-
-	/// Timer used for the animation.
-	timer_basic timer;
-
-	// ****************************** //
-	// Functions
-	// ****************************** //
-	/// Standard initialization to be called before the animation loop.
-	void initialize();
 	/// The frame display to be called within the animation loop.
 	void display();
+	/// Display semi-transparent meshes.
+	void display_semi_transparent();
+	/// Standard initialization to be called before the animation loop.
+	void initialize();
 	/// The display of the GUI, also called within the animation loop. 
 	void display_gui();
 
@@ -127,6 +115,54 @@ public:
 	void handleMouseMove(GLFWwindow* window);
 
 private:
+	/// Standard GUI element storage.
+	gui_parameters gui;
+
+	/// Drawable structures to display the Voronoi diagram.
+	mesh_drawable terrain;
+
+	/// Ships to display on the sea: the mesh and their positions.
+	mesh_drawable ship_drawable;
+	vector<Ship> ships;
+
+	// Cloud particles
+	vector<vec3> particles;
+	mesh_drawable cloud;
+
+	// Snow
+    normal_distribution<double> snowheight;
+	vector<Snowflake> snowflakes;
+	mesh_drawable snowflake;
+
+	/// Drawable bird
+	std::vector<mesh_drawable> birds;
+	int n_birds = 10;
+
+	/// Skybox.
+	skybox_drawable skybox;
+
+	/// The maximum height of the mountains.
+	/// This is being used by the clouds to avoid collision.
+	float max_height;
+
+	// Structures representing the Voronoi diagram in memory
+	int N; // The number of clusters
+	vector<vec3> centers; // Their centers
+    vector<vector<int>> mycorners; // The set of the corners of a polygon
+    vector<vector<Neighbor>> neighbors; // The set of neighbors of a polygon
+    vector<Biotope> biotopes; // The biotope of the polygon
+    vector<float> waterdists; // The distance to the water
+    vector<Windsource*> windsources; // Wind sources
+
+	int N_corners; // The number of corners
+    vector<vec3> corners; // The corners
+	vector<vector<int>> touches; // The list of polygons a corner  touches
+    vector<vector<Adjacent>> adjacents; // The adjacents corners of a corner
+    default_random_engine randeng;
+
+	/// Timer used for the animation.
+	timer_basic timer;
+
 	/// Creates the terrain.
 	void create_terrain();
 	/// Computes the heights of the Voronoi polygons.
@@ -144,6 +180,14 @@ private:
 	void laplacian_smoothing();
 	/// Adds remaining biotopes.
 	void add_biotopes();
-	/// Adds a wind field
+	/// Adds wind primitives.
 	void add_wind();
+	/// Adds ships.
+	void add_ships();
+	/// Adds snowflakes to the scene.
+	void add_snowflakes();
+	/// Adds cloud particles to the scene.
+	void add_cloud();
+	/// Adds cloud particles to the scene.
+	void add_birds();
 };
