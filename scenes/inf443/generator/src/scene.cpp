@@ -1,20 +1,12 @@
 #include "scene.hpp"
 
-const float MOIS_STD = 0.2f;
-const float EL_STD = 0.2f;
-/// Number of relaxations to perform on the Voronoi diagram.
-const int RELAX_CNT = 2;
-/// (Estimate) number of polygons to use to generate the diagram.
-const int POLYGON_CNT = 30000;
-/// SIze of the generated terrain (height and width)
-const float TERRAIN_SIZE = 20.0f;
-
-mesh cylinder(float r, float h);
+scene_structure::~scene_structure() {
+	for (Windsource* source: windsources) {
+		delete source;
+	}
+}
 
 void scene_structure::handleKeyPress(GLFWwindow* window, int key, int action) {
-
-	inputs_keyboard_parameters const& keyboard = inputs.keyboard;
-	
 	//block handling activation and deactivation of camera movement
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
 		cameraCanMove = !cameraCanMove;
@@ -89,7 +81,6 @@ void scene_structure::handleMouseMove(GLFWwindow* window) {
 /// This function is called only once at the beginning of the program
 /// and initializes the meshes, diagrams and other structures.
 void scene_structure::initialize() {
-	// Set the behavior of the camera and its initial position
 	randeng = default_random_engine(time(NULL));
 
 	auto start = high_resolution_clock::now();
@@ -138,41 +129,38 @@ void scene_structure::initialize() {
 	start = high_resolution_clock::now();
 	create_terrain();
 	stop = high_resolution_clock::now();
-	cout << "Terrain in " << duration.count() << "ms [OK]" << endl;
+	cout << "Terrain generated in " << duration.count() << "ms [OK]" << endl;
+
+	start = high_resolution_clock::now();
+	add_ships();
+	stop = high_resolution_clock::now();
+	cout << "Ships added in " << duration.count() << "ms [OK]" << endl;
+
+	start = high_resolution_clock::now();
+	add_snowflakes();
+	stop = high_resolution_clock::now();
+	cout << "Snow added in " << duration.count() << "ms [OK]" << endl;
+
+	start = high_resolution_clock::now();
+	add_birds();
+	stop = high_resolution_clock::now();
+	cout << "Birds added in " << duration.count() << "ms [OK]" << endl;
+
+	start = high_resolution_clock::now();
+	add_cloud();
+	stop = high_resolution_clock::now();
+	cout << "Cloud added in " << duration.count() << "ms [OK]" << endl;
 
 	// Initialize the skybox
 	// The path must contain 6 texture images
 	skybox.initialize("assets/skybox/");
-
-	// draw birds
-	mesh bird_mesh = mesh_load_file_obj("assets/camel.obj");
-	for (int i = 0; i < n_birds; i++) {
-		mesh_drawable bird;
-		bird.initialize(bird_mesh, "bird mesh");
-		bird.transform.translation = { 0, 0, 10 * rand()};
-		bird.transform.scaling = 0.5f;
-		birds.push_back(bird);
-	}
-
-    float r = 0.1f;
-    float h = 0.3f;
-	mesh cylinder_mesh = cylinder(r, h);
-	ship.initialize(cylinder_mesh, "Ship");
-	for (int idx = 0; idx < N; idx++) {
-		if (biotopes[idx] == Biotope::Ocean) {
-			ship.transform.translation = centers[idx];
-			break;
-		}
-	}
-
-	timer.scale = 0.5f;
 
 	// Create a visual frame representing the coordinate system
 	global_frame.initialize(mesh_primitive_frame(), "Frame");
 	environment.camera.position_camera = { 5.0f, 5.0f, 10.0f };
 	environment.camera.manipulator_rotate_roll_pitch_yaw(0, camera_pitch, camera_yaw); //initial rotation value
 
-	timer.scale = 0.5f;
+	timer.scale = 0.5;
 }
 
 // This function is constantly called at every frame
@@ -192,21 +180,189 @@ void scene_structure::display() {
 
 	// Update the current time
 	timer.update();
-	auto wind = windfield[(int) ship.transform.translation.x][(int) ship.transform.translation.y];
-	float ship_x = ship.transform.translation.x + wind.first;
-	float ship_y = ship.transform.translation.y + wind.second;
-	if (ship_x >= 0.0f && ship_y >= 0.0f && ship_x <= (float) TERRAIN_SIZE && ship_y <= (float) TERRAIN_SIZE) {
-		ship.transform.translation.x = ship_x;
-		ship.transform.translation.y = ship_y;
-		ship.transform.translation.z = heightfield[(int) ship_x][(int) ship_y];
+
+	// Update the wind primitives
+	for (Windsource* source : windsources) {
+		source->step(timer.scale);
 	}
 
-	// Draw the lines between the clusters, and the borders
+	// Draw the terrain
 	draw(terrain, environment);
-	draw(ship, environment);
+	
+	// Draw birds
 	for (int i = 0; i < n_birds; i++) {
 		draw(birds[i], environment);
 	}
+
+	// Compute the wind direction for each ship
+	// Taking into account the influence of each ship on
+	// the other ones
+	vector<vec2> wind_dir;
+	wind_dir.resize(ships.size());
+	for (int i = 0; i < ships.size(); i++) {
+		Ship& ship = ships[i];
+		if (ship.outofscope) continue;
+
+		vec2 wind;
+		for (Windsource* source: windsources) {
+			wind += source->field(ship.pos);
+		}
+		for (Ship& other_ship: ships) {
+			Revultion source = Revultion(other_ship.pos, 0.3f, 0.3f, 0.002f);
+			wind += source.field(ship.pos);
+		}
+
+		wind_dir[i] = wind;
+		if (norm(wind) > 0.0001f) {
+			ship.dir = normalize(wind);
+		}
+	}
+
+	// Update the ships according to the previously
+	// computed wind direction
+	// Mark if necessary newly out of scope ships
+	for (int i = 0; i < ships.size(); i++) {
+		Ship& ship = ships[i];
+		if (ship.outofscope) continue;
+
+		vec2 new_pos = ship.pos + wind_dir[i];
+
+		// If the ship is still in the terrain, update its position and draw it
+		if (new_pos.x >= 0.0f && new_pos.y >= 0.0f && new_pos.x <= (float) TERRAIN_SIZE && new_pos.y <= (float) TERRAIN_SIZE) {
+			// Update if necessary the polygon where the ships stands
+			// Since we rely on Voronoi cells, it is known that if you are closer
+			// to the center of a neighboring centroid than to the center of your
+			// own polygon, you now belong to the neighboring polygon
+			int new_polygon = ship.polygon;
+			vec2 my_center = { centers[ship.polygon].x, centers[ship.polygon].y };
+			for(Neighbor& neighbor: neighbors[ship.polygon]) {
+				vec2 new_center = { centers[neighbor.polygon].x, centers[neighbor.polygon].y };
+				if (norm(ship.pos-new_center) < norm(ship.pos-my_center)) {
+					new_polygon = neighbor.polygon;
+					break;
+				}
+			}
+
+
+			// Accept the updates only if we do NOT land on the shores
+			if (biotopes[new_polygon] == Biotope::Ocean) {
+				ship.pos = new_pos;
+				ship.polygon = new_polygon;
+			}
+
+			ship_drawable.transform.translation = { ship.pos.x, ship.pos.y, 0 };
+			// The first reorientation is needed because the OBJ is not correcly oriented along this axis
+			ship_drawable.transform.rotation = rotation_transform::from_axis_angle({ 1,0,0 }, M_PI/2);
+
+			// We orient the ship
+			ship_drawable.transform.rotation = rotation_transform::between_vector({ 0.0f, -1.0f, 0.0f }, {ship.dir.x, ship.dir.y, 0.0f }) * ship_drawable.transform.rotation;
+
+			draw(ship_drawable, environment);
+		} else {
+			ship.outofscope = true;
+		}
+	}
+
+	remove_if(ships.begin(), ships.end(), [] (Ship& ship) {
+		return ship.outofscope;
+	});
+
+	display_semi_transparent();
+}
+
+void scene_structure::display_semi_transparent() {
+	// Enable use of alpha component as color blending for transparent elements
+	//  alpha = current_color.alpha
+	//  new color = previous_color * alpha + current_color * (1-alpha)
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	// Disable depth buffer writing
+	//  - Transparent elements cannot use depth buffer
+	//  - They are supposed to be display from furest to nearest elements
+	glDepthMask(false);
+
+	// For each particle of the cloud, update its position
+	// according to the wind direction and draw it
+	for (vec3& particle: particles) {
+		vec2 wind;
+		vec2 pos2D = { particle.x, particle.y };
+		for (Windsource* source: windsources) {
+			wind += source->field(pos2D);
+		}
+		pos2D += wind;
+		particle.x = pos2D.x;
+		particle.y = pos2D.y;
+
+		// Use these guiding particles to draw many particles around
+		// Seems however to be really resources-intensive, so we may have to limit the number of particles drawn
+		// to only one. If you computer can handle it, you can increase PARTICLES_PER_GUIDE and see the result.
+		// We use a slight perlin noise to have a deterministic, continuous noise
+		for (int i = -PARTICLES_PER_GUIDE; i <= PARTICLES_PER_GUIDE; i++) {
+			for (int j = -PARTICLES_PER_GUIDE; j <= PARTICLES_PER_GUIDE; j++) {
+				float perlin_x = noise_perlin({particle.x / (float) TERRAIN_SIZE, particle.y / (float) TERRAIN_SIZE}, 4, 3.26f, 2.268f) / 500;
+				float perlin_y = noise_perlin({particle.x / (float) TERRAIN_SIZE, particle.y / (float) TERRAIN_SIZE}, 4, 3.26f, 2.978f) / 500;
+				cloud.transform.translation = { particle.x + i * PARTICLE_SIZE + perlin_x, particle.y + perlin_y + j * PARTICLE_SIZE, particle.z } ;
+				draw(cloud, environment);
+			}
+		}
+	}
+
+	// For each snowflake, update and print
+	for (Snowflake& particle: snowflakes) {
+		vec2 wind;
+		vec2 pos2D = { particle.pos.x, particle.pos.y };
+		for (Windsource* source: windsources) {
+			wind += source->field(pos2D);
+		}
+		pos2D += wind;
+		particle.pos.x = pos2D.x;
+		particle.pos.y = pos2D.y;
+		particle.speed_z -= 0.0000981;
+		particle.pos.z += particle.speed_z * timer.scale;
+
+		// Find
+		// Update if necessary the polygon where the snowflake stands	
+		// Since we rely on Voronoi cells, it is known that if you are closer
+		// to the center of a neighboring centroid than to the center of your
+		// own polygon, you now belong to the neighboring polygon
+		vec2 my_center = { centers[particle.polygon].x, centers[particle.polygon].y };
+		vec2 my_pos = { particle.pos.x, particle.pos.y };
+		for(Neighbor& neighbor: neighbors[particle.polygon]) {
+			vec2 new_center = { centers[neighbor.polygon].x, centers[neighbor.polygon].y };
+			if (norm(my_pos-new_center) < norm(my_pos-my_center)) {
+				particle.polygon = neighbor.polygon;
+				break;
+			}
+		}
+
+		// If we reach the ground, spawn again in the sky
+		if (particle.pos.z < centers[particle.polygon].z) {
+			particle.pos.x = centers[particle.initial_polygon].x;
+			particle.pos.y = centers[particle.initial_polygon].y;
+			particle.pos.z = snowheight(randeng);
+			particle.speed_z = 0;
+
+			// If there snow on a non-snow biotope, change the biotope
+			// on a random basis
+			if (biotopes[particle.polygon] != Biotope::Snow 
+				&& biotopes[particle.polygon] != Biotope::Lake
+				&& biotopes[particle.polygon] != Biotope::Ocean
+				&& rand() % 75 == 0) {
+				cout << "New snow biotope added" << endl;
+				biotopes[particle.polygon] = Biotope::Snow;
+				terrain.clear();
+				create_terrain();
+			}
+		}
+
+		snowflake.transform.translation = particle.pos;
+		draw(snowflake, environment);
+	}
+
+	// Don't forget to re-activate the depth-buffer write
+	glDepthMask(true);
+	glDisable(GL_BLEND);
 }
 
 /// Displays the GUI elements.
@@ -216,12 +372,6 @@ void scene_structure::display_gui() {
 
 /// Creates a terrain mesh based on the Voronoi diagram.
 void scene_structure::create_terrain() {
-	// Initializes heightmap
-	heightfield.resize((int) TERRAIN_SIZE + 1, {});
-	for (int i = 0; i < (int) TERRAIN_SIZE + 1; i++) {
-		heightfield[i].resize((int) TERRAIN_SIZE + 1, INFINITY);
-	}
-
     // Terrain geometry
 	mesh terrain_mesh;
     for (int k = 0; k < N; k++) {
@@ -232,7 +382,7 @@ void scene_structure::create_terrain() {
 		const int center_idx = 0;
 
 		vec3 color;
-		if (biotopes[k] == Biotope::Ocean)
+		if (biotopes[k] == Biotope::Ocean || biotopes[k] == Biotope::Shore)
 			color = vec3(0.0f,0.412f,0.58f);
 		else if (biotopes[k] == Biotope::Lake)
 			color = vec3(0.2f,0.59f,0.885f);
@@ -265,11 +415,9 @@ void scene_structure::create_terrain() {
 		else
 			color = vec3(0.6f,0.85f,0.5f);
 
-		heightfield[(int) centers[k].x][(int) centers[k].y] = centers[k].z;
 		polygon_mesh.position.push_back(centers[k]);
 		polygon_mesh.color.push_back(color);
 		for(int& corner: mycorners[k]) {
-			heightfield[(int) corners[corner].x][(int) corners[corner].y] = corners[corner].z;
 			polygon_mesh.position.push_back(corners[corner]);
 			polygon_mesh.color.push_back(color);
 		}
@@ -286,6 +434,7 @@ void scene_structure::create_terrain() {
 
 		// Apply defaults
 		polygon_mesh.fill_empty_field();
+
 		terrain_mesh.push_back(polygon_mesh);
 	}
 
@@ -340,8 +489,6 @@ void scene_structure::compute_heights() {
 				vec2 corner_v = { corners[v].x, corners[v].y };
 				vec2 pt = normalize((corner_u + corner_v) / 2);
 				float noise = noise_perlin(pt, 2, 0.291f, 10.0f)/15.0f;
-				// float noise = std::pow(noise_perlin(pt, 6, 0.291f, 5.268f),1.7f); when multiplied by norm
-				// float noise = noise_perlin(pt, 6, 0.507f, 1.982f); when multiplied by norm
 				dist = noise;
 			}
 
@@ -633,7 +780,6 @@ void scene_structure::add_biotopes() {
 	sort(orderedHeights.begin(), orderedHeights.end());
 
 	// Find highest, finite height
-	float max_height;
 	for (int i = N-1; i >= 0; i--) {
 		if (orderedHeights[i] < INFINITY) {
 			max_height = orderedHeights[i];
@@ -654,10 +800,10 @@ void scene_structure::add_biotopes() {
 	float mois5 = orderedWaterdists[5*N/6];
 	
 	// We define snow biotopes based on elevation
-    normal_distribution<double> distEl4(el4,EL_STD); 
+    normal_distribution<double> distEl4(el4,EL_STD);
     normal_distribution<double> distEl3(el3,EL_STD);
     normal_distribution<double> distEl2(el2,EL_STD);
-    normal_distribution<double> distMois1(mois1,MOIS_STD); 
+    normal_distribution<double> distMois1(mois1,MOIS_STD);
     normal_distribution<double> distMois2(mois2,MOIS_STD);
     normal_distribution<double> distMois3(mois3,MOIS_STD);
     normal_distribution<double> distMois4(mois4,MOIS_STD);
@@ -666,10 +812,7 @@ void scene_structure::add_biotopes() {
 		if (biotopes[idx] != Biotope::Land)
 			continue;
 		if (centers[idx].z >= distEl4(randeng)) {
-			if (waterdists[idx] <= distMois3(randeng)) biotopes[idx] = Biotope::Snow;
-			else if (waterdists[idx] <= distMois4(randeng)) biotopes[idx] = Biotope::Tundra;
-			else if (waterdists[idx] <= distMois5(randeng)) biotopes[idx] = Biotope::Bare;
-			else biotopes[idx] = Biotope::Scorched;
+			biotopes[idx] = Biotope::Snow;
 		} else if (centers[idx].z >= distEl3(randeng)) {
 			if (waterdists[idx] <= distMois2(randeng)) biotopes[idx] = Biotope::Taiga;
 			else if (waterdists[idx] <= distMois4(randeng)) biotopes[idx] = Biotope::Shrubland;
@@ -691,57 +834,107 @@ void scene_structure::add_biotopes() {
 
 /// Adds wind.
 void scene_structure::add_wind() {
-	for (int i = 0; i < (int) TERRAIN_SIZE; i++) {
-		windfield.push_back({});
-		for (int j = 0; j < (int) TERRAIN_SIZE; j++) {
-			windfield[i].push_back(pair<float,float>(0.005f,-0.005f));
+	// Find the shore biotopes (these are
+	// the sea biotopes that are near the land)
+	for (int idx = 0; idx < N; idx++) {
+		if (biotopes[idx] == Biotope::Ocean) {
+			for (Neighbor& neighbor: neighbors[idx]) {
+				int poly = neighbor.polygon;
+				if (poly != -1 && biotopes[poly] != Biotope::Ocean) {
+					biotopes[idx] = Biotope::Shore;
+				}
+			}
+		}
+	}
+
+	// Add cyclones
+	for (int i = 0; i < 5; i++) {
+		Cyclone* cyclone = new Cyclone(vec2 { (rand() / (float) RAND_MAX)*(float) TERRAIN_SIZE, (rand() / (float) RAND_MAX)*(float) TERRAIN_SIZE}, 0.002f, 1.5f, { 0.001, 0.001 }, rand() % 2 == 0);
+		windsources.push_back(cyclone);
+	}
+
+	// Add gusts
+	for (int i = 0; i < 5; i++) {
+		Gust* gust = new Gust(vec2 { (rand() / (float) RAND_MAX)*(float) TERRAIN_SIZE, (rand() / (float) RAND_MAX)*(float) TERRAIN_SIZE}, 0.001f * normalize(vec2 { rand(), rand() }), 0.002f, 2);
+		windsources.push_back(gust);
+	}
+
+	// And a final one for the clouds
+	Gust* gust = new Gust({0.0f, 0.0f}, {0.001f, 0.001f}, 0.005f, 1.0f);
+	windsources.push_back(gust);
+}
+
+/// Adds ships.
+void scene_structure::add_ships() {
+	// Create a new ship mesh
+	mesh ship_mesh = mesh_load_file_obj("assets/boat.obj");
+	ship_drawable.initialize(ship_mesh, "Ship");
+	ship_drawable.transform.scaling = 0.0005f;
+	ship_drawable.shading.color = { 0.73f, 0.55f, 0.39f }; // Wood color
+
+	// Generates random boats on the sea
+	for (int i = 0; i < SHIP_CNT; i++) {
+		ships.push_back({});
+		
+		// We add ships wherever there's a ocean biotope
+		while (true) {
+			int idx = rand() % N;
+			if (biotopes[idx] == Biotope::Ocean) {
+				vec2 dir = { 0.0f, 1.0f };
+				ships[i] = { centers[idx], dir, false, idx };
+				break;
+			}
 		}
 	}
 }
 
-/// Create a cylinder
-/// TODO: change or remove to create a real ship.
-mesh cylinder(float r, float h) {
-    // Number of samples of the terrain is N x N
-    int N = 20;
+/// Adds a cloud to the scene.
+void scene_structure::add_cloud() {
+	// Create a cloud with n*n particles
+    normal_distribution<double> distEl4(max_height,0.04f);
+	for (int k = 0; k < 3; k++) {
+		for (int i = 0; i < PARTICLE_CNT; i++) {
+			for (int j = 0; j < PARTICLE_CNT; j++) {
+				particles.push_back({(float) i/PARTICLE_CNT, (float) j/PARTICLE_CNT, distEl4(randeng) + k * PARTICLE_SIZE });
+			}
+		}
+	}
+	cloud.initialize(mesh_primitive_quadrangle({ -PARTICLE_SIZE,0,0 }, { PARTICLE_SIZE,0,0 }, { PARTICLE_SIZE,0,PARTICLE_SIZE }, { -PARTICLE_SIZE,0,PARTICLE_SIZE }));
+	cloud.texture = opengl_load_texture_image("assets/smoke.png");
+	cloud.shading.alpha = 0.8f;
+	cloud.transform.translation.z = 1.0f;
+	cloud.shading.phong.specular = 0.0f;
+	cloud.shading.phong.diffuse = 0.0f;
+	cloud.shading.phong.ambient = 1.0f;
+}
 
-    mesh cylinder; // temporary terrain storage (CPU only)
-    cylinder.position.resize(N*N);
-    cylinder.uv.resize(N*N);
+/// Adds snowflakes to the scene.
+void scene_structure::add_snowflakes() {
+	snowheight = normal_distribution<double>(max_height + 0.7f,0.3f);
+	for (int idx = 0; idx < N; idx++) {
+		if (biotopes[idx] == Biotope::Snow) {
+			vec3 pos = {centers[idx].x, centers[idx].y, snowheight(randeng)};
+			snowflakes.push_back({ pos, 0, idx, idx });
+		}
+	}
 
-    // Fill terrain geometry
-    for(int ku=0; ku<N; ++ku)
-    {
-        for(int kv=0; kv<N; ++kv)
-        {
-            // Compute local parametric coordinates (u,v) \in [0,1]
-            float u = ku/(N-1.0f);
-            float v = kv/(N-1.0f);
+	// Create a snowflake mesh
+	snowflake.initialize(mesh_primitive_quadrangle({ -PARTICLE_SIZE,0,0 }, { PARTICLE_SIZE,0,0 }, { PARTICLE_SIZE,0,PARTICLE_SIZE }, { -PARTICLE_SIZE,0,PARTICLE_SIZE }));
+	snowflake.texture = opengl_load_texture_image("assets/snowflake.png");
+	snowflake.shading.phong.specular = 0.0f;
+	snowflake.shading.phong.diffuse = 0.0f;
+	snowflake.shading.phong.ambient = 1.0f;
+}
 
-            // Compute the local surface function
-            vec3 p = {r*cos(2* Pi *u), r*sin(2* Pi *u), h*(v-0.5f)};
-
-            // Store vertex coordinates
-            cylinder.position[kv+N*ku] = p;
-            cylinder.uv[kv+N*ku] = {u, v};
-        }
-    }
-
-    // Generate triangle organization
-    for(int ku=0; ku<N-1; ++ku)
-    {
-        for(int kv=0; kv<N-1; ++kv)
-        {
-            int idx = kv + N*ku;
-
-            uint3 triangle_1 = {idx, idx+1+N, idx+1};
-            uint3 triangle_2 = {idx, idx+N, idx+1+N};
-
-            cylinder.connectivity.push_back(triangle_1);
-            cylinder.connectivity.push_back(triangle_2);
-        }
-    }
-
-	cylinder.fill_empty_field();
-    return cylinder;
+/// Adds birds/boids to the scene.
+void scene_structure::add_birds() {
+	// draw birds
+	mesh bird_mesh = mesh_load_file_obj("assets/camel.obj");
+	for (int i = 0; i < n_birds; i++) {
+		mesh_drawable bird;
+		bird.initialize(bird_mesh, "bird mesh");
+		bird.transform.translation = { 0, 0, 10 * rand()};
+		bird.transform.scaling = 0.5f;
+		birds.push_back(bird);
+	}
 }
