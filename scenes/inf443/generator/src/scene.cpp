@@ -188,8 +188,9 @@ void scene_structure::display() {
 		source->step(timer.scale);
 	}
 
-	// Draw the terrain
+	// Draw the terrain and the sea
 	draw(terrain, environment);
+	draw(sea, environment);
 	
 	// Draw birds
 	update_birds_positions(dt, n_birds, birds);
@@ -255,13 +256,19 @@ void scene_structure::display() {
 				ship.polygon = new_polygon;
 			}
 
-			ship_drawable.transform.translation = { ship.pos.x, ship.pos.y, 0 };
+			ship_drawable["ship"].transform.translation = { ship.pos.x, ship.pos.y, 0 };
 			// The first reorientation is needed because the OBJ is not correcly oriented along this axis
-			ship_drawable.transform.rotation = rotation_transform::from_axis_angle({ 1,0,0 }, M_PI/2);
+			ship_drawable["ship"].transform.rotation = rotation_transform::from_axis_angle({ 1,0,0 }, M_PI/2);
 
 			// We orient the ship
-			ship_drawable.transform.rotation = rotation_transform::between_vector({ 0.0f, -1.0f, 0.0f }, {ship.dir.x, ship.dir.y, 0.0f }) * ship_drawable.transform.rotation;
+			ship_drawable["ship"].transform.rotation = rotation_transform::between_vector({ 0.0f, -1.0f, 0.0f }, {ship.dir.x, ship.dir.y, 0.0f }) * ship_drawable["ship"].transform.rotation;
+			
+			// We place the sail at the same position as the ship
+			ship_drawable["sail"].transform = ship_drawable["ship"].transform;
 
+			// We update the coordinates of the whole hierarchy
+			ship_drawable.update_local_to_global_coordinates();
+	
 			draw(ship_drawable, environment);
 		} else {
 			ship.outofscope = true;
@@ -357,6 +364,7 @@ void scene_structure::display_semi_transparent() {
 				cout << "New snow biotope added" << endl;
 				biotopes[particle.polygon] = Biotope::Snow;
 				terrain.clear();
+				sea.clear();
 				create_terrain();
 			}
 		}
@@ -379,6 +387,8 @@ void scene_structure::display_gui() {
 void scene_structure::create_terrain() {
     // Terrain geometry
 	mesh terrain_mesh;
+    // Sea geometry
+	mesh sea_mesh;
     for (int k = 0; k < N; k++) {
 		// The following convention is being used:
 		// the first point is the centers of the polygon,
@@ -440,12 +450,23 @@ void scene_structure::create_terrain() {
 		// Apply defaults
 		polygon_mesh.fill_empty_field();
 
-		terrain_mesh.push_back(polygon_mesh);
+		if (biotopes[k] == Biotope::Ocean || biotopes[k] == Biotope::Shore)
+			sea_mesh.push_back(polygon_mesh);
+		else
+			terrain_mesh.push_back(polygon_mesh);
 	}
 
 	// Initialize and sets the right color for the land
 	terrain.initialize(terrain_mesh, "Terrain");
+	terrain.shading.phong.diffuse = 0.2f;
+	terrain.shading.phong.ambient = 0.8f;
 	terrain.shading.phong.specular = 0.0f; // non-specular land material
+
+	// Initialize and sets the right color for the land
+	sea.initialize(sea_mesh, "Sea");
+	sea.shading.phong.diffuse = 0.0f;
+	sea.shading.phong.ambient = 0.8f;
+	sea.shading.phong.specular = 0.0f; // non-specular land material
 }
 
 /// Computes the height, and find the connected component
@@ -721,8 +742,8 @@ void scene_structure::create_ocean_border() {
 	// Random seed computed once to generate different perlin noise
 	// at each time. This seed is used as an offset of the position
 	// to determine where to look in the (bidimentional, infinite) texture.
-	float delta_x = (rand() / (double)RAND_MAX)*20.0f;
-	float delta_y = (rand() / (double)RAND_MAX)*20.0f;
+	float delta_x = (rand() / (double)RAND_MAX)*1000.0f;
+	float delta_y = (rand() / (double)RAND_MAX)*1000.0f;
 
 	for(int idx = 0; idx < N; idx++) {
 		for (auto& corner_idx: mycorners[idx]) {
@@ -735,6 +756,7 @@ void scene_structure::create_ocean_border() {
 		// First proposition: if (noise_perlin(pt, 6, 0.291f, 5.268f) > 0.6f) {
 		if (noise_perlin(pt, 6, 0.291f, 5.268f) > 0.8f // Ocean
 			|| noise_perlin({pt.x * 1.5f, pt.y * 1.5f}, 2, 0.355f, 3.603f) > 1.1f // Lakes
+			|| norm(vec2 { centers[idx].x, centers[idx].y } - vec2 {(float) TERRAIN_SIZE / 2, (float) TERRAIN_SIZE / 2}) >= (0.75f + sin(7*atan(centers[idx].y/centers[idx].x))*0.15f) * (float) TERRAIN_SIZE / 1.4142f
 		) {
 			biotopes[idx] = Biotope::Lake;
 		}
@@ -871,10 +893,24 @@ void scene_structure::add_wind() {
 /// Adds ships.
 void scene_structure::add_ships() {
 	// Create a new ship mesh
-	mesh ship_mesh = mesh_load_file_obj("assets/boat.obj");
-	ship_drawable.initialize(ship_mesh, "Ship");
-	ship_drawable.transform.scaling = 0.0005f;
-	ship_drawable.shading.color = { 0.73f, 0.55f, 0.39f }; // Wood color
+	mesh_drawable shipbody;
+	shipbody.initialize(mesh_load_file_obj("assets/shipbody.obj"), "ship");
+	shipbody.transform.scaling = 0.0005f;
+	shipbody.shading.phong.specular = 0;
+	shipbody.shading.phong.diffuse = 0.3f;
+	shipbody.shading.phong.ambient = 0.7f;
+	shipbody.shading.color = { 0.73f, 0.55f, 0.39f }; // Wood color
+
+	mesh_drawable sail;
+	sail.initialize(mesh_load_file_obj("assets/sail.obj"), "sail");
+	sail.transform.scaling = 0.0005f;
+	sail.shading.phong.specular = 0;
+	sail.shading.phong.diffuse = 0.3f;
+	sail.shading.phong.ambient = 0.7f;
+	sail.shading.color = { 0.996f, 0.996f, 0.886f }; // Wood color
+
+	ship_drawable.add(shipbody);
+	ship_drawable.add(sail);
 
 	// Generates random boats on the sea
 	for (int i = 0; i < SHIP_CNT; i++) {

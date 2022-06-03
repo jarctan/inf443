@@ -144,9 +144,11 @@ private:
 
 	/// Drawable structures to display the Voronoi diagram.
 	mesh_drawable terrain;
+	/// Drawable structures to display the Voronoi diagram.
+	mesh_drawable sea;
 
 	/// Ships to display on the sea: the mesh and their positions.
-	mesh_drawable ship_drawable;
+	hierarchy_mesh_drawable ship_drawable;
 	vector<Ship> ships;
 
 	// Cloud particles
