@@ -85,7 +85,7 @@ struct Snowflake {
 
 //A bird
 struct Bird {
-	mesh_drawable bird_drawable;
+	hierarchy_mesh_drawable bird_drawable;
 	vec3 pos;
 	vec3 speed;
 	float center_follow_factor = 0.5;
@@ -136,7 +136,7 @@ public:
 
 	/// Birds
 	vector<Bird> birds;
-	static const int n_birds = 100;
+	static const int n_birds = 10;
 
 private:
 	/// Standard GUI element storage.

@@ -182,6 +182,7 @@ void scene_structure::display() {
 
 	// Update the current time
 	float dt = timer.update();
+	float t = timer.t;
 
 	// Update the wind primitives
 	for (Windsource* source : windsources) {
@@ -195,8 +196,15 @@ void scene_structure::display() {
 	// Draw birds
 	update_birds_positions(dt, n_birds, birds);
 	for (int i = 0; i < n_birds; i++) {
-		birds[i].bird_drawable.transform.translation = birds[i].pos;
-		birds[i].bird_drawable.transform.rotation = rotation_transform::between_vector({ 0.0f, 1.0f, 0.0f }, normalize(birds[i].speed));
+		birds[i].bird_drawable["body"].transform.translation = vec3( 0,0.2f * std::cos(5 * t),0 ) + birds[i].pos;
+		birds[i].bird_drawable["wing_L"].transform.rotation = rotation_transform::from_axis_angle({ 0,0,1 }, Pi / 8.0f * (1 + std::cos(20 * t)));
+		birds[i].bird_drawable["wing_R"].transform.rotation = rotation_transform::from_axis_angle({ 0,0,-1 }, Pi / 8.0f * (1 + std::cos(20 * t)));
+		birds[i].bird_drawable["head"].transform.translation = vec3{ 0,0,1.8 } + vec3{ 0,0,0.1f * std::cos(2.5 * t) };
+		birds[i].bird_drawable["head"].transform.rotation = rotation_transform::from_axis_angle({ 0,1,0 }, Pi / 8.0f * std::cos(5 * t));
+		
+		birds[i].bird_drawable.update_local_to_global_coordinates();
+
+		birds[i].bird_drawable["body"].transform.rotation = rotation_transform::between_vector({0.0f, 1.0f, 0.0f}, normalize(birds[i].speed));
 		draw(birds[i].bird_drawable, environment);
 	}
 
@@ -970,14 +978,46 @@ void scene_structure::add_snowflakes() {
 void scene_structure::add_birds() {
 	// draw birds
 	mesh bird_mesh = mesh_load_file_obj("assets/camel.obj");
-	
+
 	for (int i = 0; i < n_birds; i++) {
 		birds.push_back({});
+
+		hierarchy_mesh_drawable bird_drawable;
+
+		mesh_drawable body;
+		body.initialize(mesh_primitive_ellipsoid({ 1.0f, 1.0f, 1.5f }), "body");
+		body.texture = opengl_load_texture_image("assets/body.png"); // associate a texture-image to each element
+
+		mesh_drawable head;
+		head.initialize(mesh_primitive_sphere(0.9f), "head");
+		head.texture = opengl_load_texture_image("assets/head.png");
+
+		mesh_drawable wing_L;
+		wing_L.initialize(mesh_load_file_obj("assets/wing.obj"), "wing_L");
+		wing_L.texture = opengl_load_texture_image("assets/wing.png");
+
+		mesh_drawable wing_R;
+		wing_R.initialize(mesh_load_file_obj("assets/wing.obj"), "wing_R");
+		wing_R.texture = opengl_load_texture_image("assets/wing.png");
+		wing_R.transform.rotation = rotation_transform::from_axis_angle({ 0,0,1 }, Pi);
+
+		mesh_drawable eye_L;
+		eye_L.initialize(mesh_primitive_sphere(0.2f), "eye_R");
+		eye_L.shading.color = { 0.2f,0.2f,0.2f };
+
+		mesh_drawable eye_R;
+		eye_R.initialize(mesh_primitive_sphere(0.2f), "eye_L");
+		eye_R.shading.color = { 0.2f,0.2f,0.2f };
+
+		bird_drawable.add(body);
+		bird_drawable.add(head, "body", { 0,0,1.8 });
+		bird_drawable.add(eye_R, "head", { 0.4f,0.3f,0.6f });
+		bird_drawable.add(eye_L, "head", { -0.4f,0.3f,0.6f });
+		bird_drawable.add(wing_L, "body", { 0,1.03f,0 });
+		bird_drawable.add(wing_R, "body", { 0,1.03f,0 });
+
 		vec3 initial_pos = { rand() % 10, rand() % 10, 8 + rand()%2 };
 		vec3 initial_speed = vec3( rand_interval(1.0, 10.0), rand_interval(1.0, 10.0), 0 );
-		mesh_drawable bird_drawable;
-		bird_drawable.initialize(bird_mesh, "Bird");
-		bird_drawable.transform.scaling = 0.2f;
 		birds[i].pos = initial_pos;
 		birds[i].speed = initial_speed;
 		birds[i].bird_drawable = bird_drawable;
