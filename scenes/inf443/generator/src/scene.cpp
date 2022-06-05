@@ -157,8 +157,8 @@ void scene_structure::initialize() {
 
 	// Create a visual frame representing the coordinate system
 	global_frame.initialize(mesh_primitive_frame(), "Frame");
-	environment.camera.position_camera = { 5.0f, 5.0f, 10.0f };
-	environment.camera.manipulator_rotate_roll_pitch_yaw(0, camera_pitch, camera_yaw); //initial rotation value
+	environment.camera.position_camera = { 5.0f, 0.0f, 3.0f };
+	environment.camera.manipulator_rotate_roll_pitch_yaw(0, initial_camera_pitch, initial_camera_yaw); //initial rotation value
 
 	timer.scale = 0.5;
 	camera_timer.scale = 0.1;
@@ -201,10 +201,15 @@ void scene_structure::display() {
 		birds[i].bird_drawable["wing_R"].transform.rotation = rotation_transform::from_axis_angle({ 0,0,-1 }, Pi / 8.0f * (1 + std::cos(20 * t)));
 		birds[i].bird_drawable["head"].transform.translation = vec3{ 0,0,1.8 } + vec3{ 0,0,0.1f * std::cos(2.5 * t) };
 		birds[i].bird_drawable["head"].transform.rotation = rotation_transform::from_axis_angle({ 0,1,0 }, Pi / 8.0f * std::cos(5 * t));
+
+		birds[i].bird_drawable["body"].transform.rotation = rotation_transform::between_vector({ 0.0f, 1.0f, 0.0f }, normalize(vec3( 0.0f, 0.0f, 1.0f )));
+		birds[i].bird_drawable["body"].transform.rotation *= rotation_transform::from_axis_angle({ 0.0f, 1.0f, 0.0f }, 3.0f * cgp::Pi / 2.0f);
+		birds[i].bird_drawable["body"].transform.rotation *= rotation_transform::from_axis_angle({ 0.0f, 1.0f, 0.0f }, (float) atan(birds[i].speed.y / birds[i].speed.x));
+		if (birds[i].speed.x > 0) birds[i].bird_drawable["body"].transform.rotation *= rotation_transform::from_axis_angle({ 0.0f,  1.0f, 0.0f }, cgp::Pi);
 		
+
 		birds[i].bird_drawable.update_local_to_global_coordinates();
 
-		birds[i].bird_drawable["body"].transform.rotation = rotation_transform::between_vector({0.0f, 1.0f, 0.0f}, normalize(birds[i].speed));
 		draw(birds[i].bird_drawable, environment);
 	}
 
@@ -297,6 +302,8 @@ void scene_structure::display_semi_transparent() {
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+	camera_head& camera = environment.camera;
+
 	// Disable depth buffer writing
 	//  - Transparent elements cannot use depth buffer
 	//  - They are supposed to be display from furest to nearest elements
@@ -323,6 +330,7 @@ void scene_structure::display_semi_transparent() {
 				float perlin_x = noise_perlin({particle.x / (float) TERRAIN_SIZE, particle.y / (float) TERRAIN_SIZE}, 4, 3.26f, 2.268f) / 500;
 				float perlin_y = noise_perlin({particle.x / (float) TERRAIN_SIZE, particle.y / (float) TERRAIN_SIZE}, 4, 3.26f, 2.978f) / 500;
 				cloud.transform.translation = { particle.x + i * PARTICLE_SIZE + perlin_x, particle.y + perlin_y + j * PARTICLE_SIZE, particle.z } ;
+				cloud.transform.rotation = rotation_transform::from_axis_angle({ 0.0f, 0.0f, 1.0f }, cgp::Pi / 2.0f + (float)atan(camera.front().y / camera.front().x));
 				draw(cloud, environment);
 			}
 		}
@@ -378,6 +386,7 @@ void scene_structure::display_semi_transparent() {
 		}
 
 		snowflake.transform.translation = particle.pos;
+		snowflake.transform.rotation = rotation_transform::from_axis_angle({ 0.0f, 0.0f, 1.0f }, cgp::Pi / 2.0f + (float) atan(camera.front().y / camera.front().x));
 		draw(snowflake, environment);
 	}
 
@@ -976,38 +985,35 @@ void scene_structure::add_snowflakes() {
 
 /// Adds birds/boids to the scene.
 void scene_structure::add_birds() {
-	// draw birds
-	mesh bird_mesh = mesh_load_file_obj("assets/camel.obj");
+	mesh_drawable body;
+	body.initialize(mesh_primitive_ellipsoid({ 1.0f, 1.0f, 1.5f }), "body");
+	body.texture = opengl_load_texture_image("assets/body.png"); // associate a texture-image to each element
+
+	mesh_drawable head;
+	head.initialize(mesh_primitive_sphere(0.9f), "head");
+	head.texture = opengl_load_texture_image("assets/head.png");
+
+	mesh_drawable wing_L;
+	wing_L.initialize(mesh_load_file_obj("assets/wing.obj"), "wing_L");
+	wing_L.texture = opengl_load_texture_image("assets/wing.png");
+
+	mesh_drawable wing_R;
+	wing_R.initialize(mesh_load_file_obj("assets/wing.obj"), "wing_R");
+	wing_R.texture = opengl_load_texture_image("assets/wing.png");
+	wing_R.transform.rotation = rotation_transform::from_axis_angle({ 0,0,1 }, Pi);
+
+	mesh_drawable eye_L;
+	eye_L.initialize(mesh_primitive_sphere(0.2f), "eye_R");
+	eye_L.shading.color = { 0.2f,0.2f,0.2f };
+
+	mesh_drawable eye_R;
+	eye_R.initialize(mesh_primitive_sphere(0.2f), "eye_L");
+	eye_R.shading.color = { 0.2f,0.2f,0.2f };
 
 	for (int i = 0; i < n_birds; i++) {
 		birds.push_back({});
 
 		hierarchy_mesh_drawable bird_drawable;
-
-		mesh_drawable body;
-		body.initialize(mesh_primitive_ellipsoid({ 1.0f, 1.0f, 1.5f }), "body");
-		body.texture = opengl_load_texture_image("assets/body.png"); // associate a texture-image to each element
-
-		mesh_drawable head;
-		head.initialize(mesh_primitive_sphere(0.9f), "head");
-		head.texture = opengl_load_texture_image("assets/head.png");
-
-		mesh_drawable wing_L;
-		wing_L.initialize(mesh_load_file_obj("assets/wing.obj"), "wing_L");
-		wing_L.texture = opengl_load_texture_image("assets/wing.png");
-
-		mesh_drawable wing_R;
-		wing_R.initialize(mesh_load_file_obj("assets/wing.obj"), "wing_R");
-		wing_R.texture = opengl_load_texture_image("assets/wing.png");
-		wing_R.transform.rotation = rotation_transform::from_axis_angle({ 0,0,1 }, Pi);
-
-		mesh_drawable eye_L;
-		eye_L.initialize(mesh_primitive_sphere(0.2f), "eye_R");
-		eye_L.shading.color = { 0.2f,0.2f,0.2f };
-
-		mesh_drawable eye_R;
-		eye_R.initialize(mesh_primitive_sphere(0.2f), "eye_L");
-		eye_R.shading.color = { 0.2f,0.2f,0.2f };
 
 		bird_drawable.add(body);
 		bird_drawable.add(head, "body", { 0,0,1.8 });
@@ -1015,6 +1021,8 @@ void scene_structure::add_birds() {
 		bird_drawable.add(eye_L, "head", { -0.4f,0.3f,0.6f });
 		bird_drawable.add(wing_L, "body", { 0,1.03f,0 });
 		bird_drawable.add(wing_R, "body", { 0,1.03f,0 });
+
+		bird_drawable["body"].transform.scaling = 0.15f;
 
 		vec3 initial_pos = { rand() % 10, rand() % 10, 8 + rand()%2 };
 		vec3 initial_speed = vec3( rand_interval(1.0, 10.0), rand_interval(1.0, 10.0), 0 );
