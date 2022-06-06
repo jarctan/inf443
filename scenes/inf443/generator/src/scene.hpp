@@ -124,7 +124,7 @@ public:
 	void display_gui();
 
 	//variables and methods for the player movement
-	float speed = 100;
+	float speed = 10;
 	float initial_camera_pitch = cgp::Pi / 2.0f;
 	float initial_camera_yaw = 0.0f;
 	float camera_pitch = 0;
