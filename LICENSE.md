@@ -71,3 +71,5 @@ Attribution 4.0 International (CC BY 4.0) - Opus Poly
 
 * Snowflake texture (https://pixabay.com/vectors/snow-snowflake-plate-crystal-cold-99325/)
 Pixabay Licensed - OpenIcons
+
+* Bee object and smoke texture: Damier Rohmer

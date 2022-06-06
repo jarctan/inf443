@@ -20,4 +20,4 @@ const int SHIP_CNT = 40;
 const float PARTICLE_SIZE = 0.05f;
 // Number of particles around each particle guide
 // If your computer can handle it, you might wish to increase it beyond 0.
-const unsigned int PARTICLES_PER_GUIDE = 0;
+const int PARTICLES_PER_GUIDE = 0;
